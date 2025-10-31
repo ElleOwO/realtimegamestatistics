@@ -76,7 +76,7 @@ def upload_to_roboflow(zip_path):
     rf = Roboflow(api_key=API_KEY)
     workspace = rf.workspace(WORKSPACE)
     project = workspace.project(PROJECT)
-    dataset = project.upload_dataset(zip_path)
+    dataset = project.version_upload(zip_path)
     print(f"Upload complete! Dataset version ID: {dataset.version}")
 
 
