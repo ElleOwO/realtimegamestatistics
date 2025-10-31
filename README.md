@@ -120,11 +120,13 @@ Each label file must share the same base name as its image.
 ### Scripts
 
 #### `merge_and_upload.py`
-This script:
-- Merges all member folders into a single unified dataset (`merged_dataset/`).
-- Ensures unique filenames to avoid collisions.
-- Zips the dataset into `merged_dataset.zip`.
-- Uploads the zipped dataset to your Roboflow project using the Roboflow API.
+How it works
+
+Merges all member annotation folders (annotations/memberX/images and annotations/memberX/labels) into merged_dataset/.
+
+Uploads every image inside merged_dataset/images to Roboflow individually.
+
+Each image upload will automatically include its YOLO-style label if the file names match (e.g., frame123.png and frame123.txt).
 
 The script automatically uses your **private API key** from GitHub Secrets and your project’s **WORKSPACE** and **PROJECT** slugs from Roboflow.
 
