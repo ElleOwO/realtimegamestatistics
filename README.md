@@ -87,19 +87,31 @@ It merges image annotations from multiple team members, compresses the data, and
 
 ```
 /realtimegamestatistics/
-├── annotations/                # Each member stores their own labeled data here
+├── annotations/                     # Each member stores their own labeled data here
 │   ├── member1/
-│   │   ├── images/
-│   │   └── labels/
+│   │   ├── images/                  # Labeled images (e.g., frame1.png)
+│   │   └── labels/                  # Corresponding YOLO annotation files (e.g., frame1.txt)
 │   ├── member2/
 │   └── ...
 │
-├── merged_dataset/             # Automatically created merged dataset (local)
-├── merge_and_upload.py         # Script that merges, zips, and uploads to Roboflow
+├── merged_dataset/                  # Auto-created by merge_and_upload.py after merging all member folders
+│   ├── images/                      # Combined images from all annotators
+│   └── labels/                      # Combined label files
 │
-└── .github/
-    └── workflows/
-        └── merge-upload.yml    # GitHub Action that runs the script automatically
+├── merge_and_upload.py              # Python script to merge and upload datasets to Roboflow
+│                                    # 1. Collects all member data
+│                                    # 2. Merges into merged_dataset/
+│                                    # 3. Uploads each image individually to Roboflow
+│
+├── .github/
+│   └── workflows/
+│       └── merge-upload.yml         # GitHub Action that runs the script automatically
+│                                    # - Installs dependencies
+│                                    # - Merges annotations
+│                                    # - Uploads images to Roboflow
+│
+└── .gitignore                       # Prevents system files, venvs, and merged outputs from being committed
+
 ```
 
 ---
