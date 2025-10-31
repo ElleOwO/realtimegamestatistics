@@ -4,6 +4,8 @@ import uuid
 import zipfile
 from roboflow import Roboflow
 import requests
+import os, shutil, zipfile
+
 
 
 
@@ -58,6 +60,27 @@ def merge_datasets():
 
     print("All datasets merged into:", MERGED_DIR)
 
+def prepare_yolo_structure():
+    """Restructure merged_dataset into YOLO format (train/images + train/labels)."""
+    train_dir = os.path.join(MERGED_DIR, "train")
+    images_dir = os.path.join(train_dir, "images")
+    labels_dir = os.path.join(train_dir, "labels")
+
+    # Clean up and recreate structure
+    if os.path.exists(train_dir):
+        shutil.rmtree(train_dir)
+    os.makedirs(images_dir, exist_ok=True)
+    os.makedirs(labels_dir, exist_ok=True)
+
+    # Move everything into train/ subfolders
+    for root, _, files in os.walk(MERGED_DIR):
+        if "images" in root:
+            for f in files:
+                shutil.move(os.path.join(root, f), os.path.join(images_dir, f))
+        elif "labels" in root:
+            for f in files:
+                shutil.move(os.path.join(root, f), os.path.join(labels_dir, f))
+
 
 def zip_dataset():
     """Create a ZIP file from the merged dataset with correct YOLO structure."""
@@ -107,8 +130,8 @@ def upload_to_roboflow(zip_path):
 
 
 
-
 if __name__ == "__main__":
     merge_datasets()
+    prepare_yolo_structure()
     zip_path = zip_dataset()
     upload_to_roboflow(zip_path)
