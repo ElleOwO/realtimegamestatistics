@@ -1,3 +1,69 @@
+# Annotation Progress Tracker Spreadsheet:
+https://docs.google.com/spreadsheets/d/11xHF4m3nwdMaOhU0I3eYglJJ1yJcFLXcJ8fwwgNiOz0/edit?gid=0#gid=0
+
+# GitHub Desktop
+1. Install GitHub Desktop
+
+2. Click “File → Clone Repository” and paste your repo link:
+https://github.com/ElleOwO/realtimegamestatistics.git
+
+3. It’ll download the repo to your computer.
+
+4. When you finish annotating, drag your new files into your local annotations folder.
+
+5. Open GitHub Desktop:
+
+  - You’ll see your changes listed.
+
+  - Add a short description like "Added annotations for frames 0–99."
+
+  - Click Commit to main → Push origin.
+
+  - That sends your changes to GitHub for everyone to see.
+
+# RTGS Team Setup Guide
+
+How to set up Git and work only in your own folder
+1. Clone the Repository
+  1. Go to your GitHub Desktop or Terminal.
+  2. Clone the project using this link:
+   https://github.com/ElleOwO/realtimegamestatistics.git
+  3. Navigate into the folder after it downloads.
+2. Create Your Personal Folder
+    Inside the 'annotations' folder, make your own folder using your name.
+    Example:
+    annotations/lyinmya/
+    annotations/alex/
+    annotations/priya/
+3. Set Up Your Local .gitignore
+  1. Open the project folder.
+  2. Create a file named '.gitignore' (if it doesn't exist).
+  3. Add the following lines (replace 'yourname' with your folder name):
+   annotations/*
+   !annotations/yourname/**
+  This makes Git track only your folder and ignore others.
+4. Keep Your .gitignore Local
+  -- Do not commit your .gitignore file!
+  This should stay on your computer only.
+  If you accidentally added it, run:
+   git rm --cached .gitignore
+5. Verify It Works
+  Run 'git status' in your terminal.
+  You should only see your files (e.g., annotations/lyinmya/...).
+  If you see other people's folders, check your .gitignore lines again.
+6. Optional: Local Exclude File
+  You can also edit '.git/info/exclude' and add the same lines there.
+  This works like .gitignore but is always local (never synced).
+
+# GitHub Actions behind the scenes
+Whenever someone uploads new annotations:
+
+GitHub Actions runs a workflow automatically (merge-upload.yml).
+
+It merges everyone’s data and uploads it to Roboflow.
+
+You don’t have to do anything special — it happens automatically in the background.
+
 # Real-Time Game Statistics
 
 This GitHub repository automates dataset management for our **real-time soccer game analytics system**.  
