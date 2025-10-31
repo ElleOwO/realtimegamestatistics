@@ -75,7 +75,7 @@ def upload_to_roboflow(zip_path):
     print("Uploading dataset to Roboflow...")
     rf = Roboflow(api_key=API_KEY)
     project = rf.workspace(WORKSPACE).project(PROJECT)
-    project.upload_dataset(zip_path)
+    project.upload(zip_path, type="dataset")
     print("Upload complete!")
 
 
