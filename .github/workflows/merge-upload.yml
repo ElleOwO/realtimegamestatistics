@@ -1,0 +1,29 @@
+name: Merge and Upload Dataset to Roboflow
+
+on:
+  push:
+    paths:
+      - "annotations/**"
+  workflow_dispatch:
+
+jobs:
+  merge-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: pip install roboflow
+
+    - name: Merge and upload to Roboflow
+      env:
+        ROBOFLOW_API_KEY: ${{ secrets.ROBOFLOW_API_KEY }}
+      run: python merge_and_upload.py
+
