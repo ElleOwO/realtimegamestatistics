@@ -4,6 +4,8 @@ import uuid
 import zipfile
 from roboflow import Roboflow
 
+
+
 # ---------- CONFIGURATION ----------
 # Paths
 BASE_DIR = os.getcwd()
@@ -11,9 +13,9 @@ ANNOTATIONS_DIR = os.path.join(BASE_DIR, "annotations")
 MERGED_DIR = os.path.join(BASE_DIR, "merged_dataset")
 
 # Roboflow credentials
-API_KEY = "YOUR_API_KEY"         # <-- replace this with your Roboflow API key
-WORKSPACE = "your-workspace"     # <-- replace with your Roboflow workspace name
-PROJECT = "your-project-name"    # <-- replace with your Roboflow project name
+API_KEY = os.getenv("ROBOFLOW_API_KEY")
+WORKSPACE = "rtgs-uifdg"
+PROJECT = "rtgs-omuwo"
 
 # -----------------------------------
 
@@ -37,7 +39,7 @@ def merge_datasets():
         lbl_path = os.path.join(folder, "labels")
 
         if not os.path.exists(img_path) or not os.path.exists(lbl_path):
-            print(f"⚠️ Skipping {folder} (missing images or labels folder)")
+            print(f"Warning: Skipping {folder} (missing images or labels folder)")
             continue
 
         for img in os.listdir(img_path):
@@ -52,7 +54,7 @@ def merge_datasets():
                     os.path.join(labels_dir, unique_name.replace(ext, ".txt"))
                 )
 
-    print("✅ All datasets merged into:", MERGED_DIR)
+    print("All datasets merged into:", MERGED_DIR)
 
 
 def zip_dataset():
@@ -64,17 +66,17 @@ def zip_dataset():
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, MERGED_DIR)
                 zipf.write(file_path, arcname)
-    print("📦 Zipped dataset saved as:", zip_path)
+    print("Zipped dataset saved as:", zip_path)
     return zip_path
 
 
 def upload_to_roboflow(zip_path):
     """Upload the merged dataset to Roboflow."""
-    print("🚀 Uploading dataset to Roboflow...")
+    print("Uploading dataset to Roboflow...")
     rf = Roboflow(api_key=API_KEY)
     project = rf.workspace(WORKSPACE).project(PROJECT)
     project.upload(zip_path)
-    print("✅ Upload complete!")
+    print("Upload complete!")
 
 
 if __name__ == "__main__":
