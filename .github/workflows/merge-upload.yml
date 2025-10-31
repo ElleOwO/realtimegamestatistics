@@ -3,8 +3,8 @@ name: Merge and Upload Dataset to Roboflow
 on:
   push:
     paths:
-      - "annotations/**"
-  workflow_dispatch:
+      - "annotations/**"   # Trigger when new annotations are added
+  workflow_dispatch:        # Allow manual run from the Actions tab
 
 jobs:
   merge-upload:
@@ -22,14 +22,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip uninstall -y roboflow || true
-        pip install --no-cache-dir --upgrade roboflow
-        pip show roboflow
-
-
+        pip install roboflow
 
     - name: Merge and upload to Roboflow
       env:
         ROBOFLOW_API_KEY: ${{ secrets.ROBOFLOW_API_KEY }}
       run: python merge_and_upload.py
-
