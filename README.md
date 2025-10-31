@@ -54,6 +54,18 @@ How to set up Git and work only in your own folder
 6. Optional: Local Exclude File
   You can also edit '.git/info/exclude' and add the same lines there.
   This works like .gitignore but is always local (never synced).
+# When pushing commits:
+1. Instead of git add *, each member should do:
+
+```
+git add annotations/theirname/
+
+Or even more specific:
+
+git add annotations/lyinmya/images/
+git add annotations/lyinmya/labels/
+```
+That’s the safest way. It only stages their folder.
 
 # GitHub Actions behind the scenes
 Whenever someone uploads new annotations:
