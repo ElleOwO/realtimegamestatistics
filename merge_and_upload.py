@@ -1,14 +1,7 @@
 import os
 import shutil
 import uuid
-import zipfile
 from roboflow import Roboflow
-import requests
-import os, shutil, zipfile
-
-
-
-
 
 # ---------- CONFIGURATION ----------
 # Paths
@@ -19,8 +12,7 @@ MERGED_DIR = os.path.join(BASE_DIR, "merged_dataset")
 # Roboflow credentials
 API_KEY = os.getenv("ROBOFLOW_API_KEY")
 WORKSPACE = "rtgs-uifdg"
-PROJECT = "rtgs-omuwo"
-
+PROJECT = "rtgs-omuwo"    
 # -----------------------------------
 
 def merge_datasets():
@@ -36,14 +28,14 @@ def merge_datasets():
         if os.path.isdir(os.path.join(ANNOTATIONS_DIR, d))
     ]
 
-    print(f"🔍 Found {len(member_folders)} member folders to merge.")
+    print(f"Found {len(member_folders)} member folders to merge.")
 
     for folder in member_folders:
         img_path = os.path.join(folder, "images")
         lbl_path = os.path.join(folder, "labels")
 
         if not os.path.exists(img_path) or not os.path.exists(lbl_path):
-            print(f"Warning: Skipping {folder} (missing images or labels folder)")
+            print(f"Skipping {folder} (missing images or labels folder)")
             continue
 
         for img in os.listdir(img_path):
@@ -60,78 +52,38 @@ def merge_datasets():
 
     print("All datasets merged into:", MERGED_DIR)
 
-def prepare_yolo_structure():
-    """Restructure merged_dataset into YOLO format (train/images + train/labels)."""
-    train_dir = os.path.join(MERGED_DIR, "train")
-    images_dir = os.path.join(train_dir, "images")
-    labels_dir = os.path.join(train_dir, "labels")
 
-    # Clean up and recreate structure
-    if os.path.exists(train_dir):
-        shutil.rmtree(train_dir)
-    os.makedirs(images_dir, exist_ok=True)
-    os.makedirs(labels_dir, exist_ok=True)
+def upload_images_to_roboflow():
+    """Upload merged dataset images one by one to Roboflow."""
+    if not API_KEY:
+        raise ValueError("ROBOFLOW_API_KEY is not set in environment variables.")
 
-    # Move everything into train/ subfolders
-    for root, _, files in os.walk(MERGED_DIR):
-        if "images" in root:
-            for f in files:
-                shutil.move(os.path.join(root, f), os.path.join(images_dir, f))
-        elif "labels" in root:
-            for f in files:
-                shutil.move(os.path.join(root, f), os.path.join(labels_dir, f))
+    print("Connecting to Roboflow...")
+    rf = Roboflow(api_key=API_KEY)
+    workspace = rf.workspace(WORKSPACE)
+    project = workspace.project(PROJECT)
 
+    images_dir = os.path.join(MERGED_DIR, "images")
+    if not os.path.exists(images_dir):
+        print("No merged images found. Please merge datasets first.")
+        return
 
-def zip_dataset():
-    """Create a ZIP file from the merged dataset with correct YOLO structure."""
-    zip_path = os.path.join(BASE_DIR, "merged_dataset.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(MERGED_DIR):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.join("train", os.path.relpath(file_path, MERGED_DIR))
-                zipf.write(file_path, arcname)
-    print("Zipped dataset saved as:", zip_path)
-    return zip_path
+    uploaded_count = 0
+    for img_file in os.listdir(images_dir):
+        if not img_file.lower().endswith((".png", ".jpg", ".jpeg")):
+            continue
 
+        image_path = os.path.join(images_dir, img_file)
+        print(f"Uploading {img_file}...")
+        try:
+            project.upload(image_path)
+            uploaded_count += 1
+        except Exception as e:
+            print(f"Error uploading {img_file}: {e}")
 
-
-
-
-import requests
-
-def upload_to_roboflow(zip_path):
-    """Upload the merged dataset ZIP to Roboflow as a new dataset version."""
-    print(" Uploading dataset ZIP to Roboflow...")
-
-    # Correct endpoint for dataset ZIP upload
-    url = f"https://api.roboflow.com/dataset/{PROJECT}/upload"
-
-    with open(zip_path, "rb") as zip_file:
-        response = requests.post(
-            url,
-            params={
-                "api_key": API_KEY,
-                "name": "Automated Upload from GitHub",
-                "workspace": WORKSPACE,
-                "split": "train"  # optional, just for clarity
-            },
-            files={"file": ("merged_dataset.zip", zip_file, "application/zip")},
-        )
-
-    print("Status:", response.status_code)
-    print("Response:", response.text)
-
-    if response.status_code == 200 and "error" not in response.text.lower():
-        print("Upload complete! Check Roboflow for a new dataset version.")
-    else:
-        print("Upload failed. See response above.")
-
-
+    print(f"Upload complete. {uploaded_count} images uploaded to Roboflow.")
 
 
 if __name__ == "__main__":
     merge_datasets()
-    prepare_yolo_structure()
-    zip_path = zip_dataset()
-    upload_to_roboflow(zip_path)
+    upload_images_to_roboflow()
