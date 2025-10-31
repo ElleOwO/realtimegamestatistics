@@ -60,16 +60,17 @@ def merge_datasets():
 
 
 def zip_dataset():
-    """Create a ZIP file from the merged dataset."""
+    """Create a ZIP file from the merged dataset with correct YOLO structure."""
     zip_path = os.path.join(BASE_DIR, "merged_dataset.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(MERGED_DIR):
             for file in files:
                 file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, MERGED_DIR)
+                arcname = os.path.join("train", os.path.relpath(file_path, MERGED_DIR))
                 zipf.write(file_path, arcname)
     print("Zipped dataset saved as:", zip_path)
     return zip_path
+
 
 
 
