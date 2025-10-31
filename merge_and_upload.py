@@ -71,13 +71,25 @@ def zip_dataset():
 
 
 def upload_to_roboflow(zip_path):
-    """Upload the merged dataset to Roboflow."""
-    print("Uploading dataset to Roboflow...")
-    rf = Roboflow(api_key=API_KEY)
-    workspace = rf.workspace(WORKSPACE)
-    project = workspace.project(PROJECT)
-    dataset = project.version_upload(zip_path)
-    print(f"Upload complete! Dataset version ID: {dataset.version}")
+    """Upload the merged dataset ZIP directly to Roboflow via API."""
+    print("Uploading dataset ZIP to Roboflow...")
+
+    url = f"https://api.roboflow.com/dataset/{PROJECT}/upload"
+
+    with open(zip_path, "rb") as zip_file:
+        response = requests.post(
+            url,
+            params={"api_key": API_KEY},
+            files={"file": zip_file},
+        )
+
+    if response.status_code == 200:
+        print("Upload complete!")
+        print("Response:", response.json())
+    else:
+        print("Upload failed!")
+        print("Status:", response.status_code)
+        print("Response:", response.text)
 
 
 
