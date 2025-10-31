@@ -74,9 +74,11 @@ def upload_to_roboflow(zip_path):
     """Upload the merged dataset to Roboflow."""
     print("Uploading dataset to Roboflow...")
     rf = Roboflow(api_key=API_KEY)
-    project = rf.workspace(WORKSPACE).project(PROJECT)
-    project.upload_dataset(zip_path)
-    print("Upload complete!")
+    workspace = rf.workspace(WORKSPACE)
+    project = workspace.project(PROJECT)
+    dataset = project.upload_dataset(zip_path)
+    print(f"Upload complete! Dataset version ID: {dataset.version}")
+
 
 
 if __name__ == "__main__":
