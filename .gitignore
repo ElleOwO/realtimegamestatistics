@@ -52,4 +52,4 @@ merged_dataset.zip
 .github/workflows/__pycache__/
 
 # davis git ignore
-annotation/* !annotation/davis**
+annotations/* !annotations/davis**
