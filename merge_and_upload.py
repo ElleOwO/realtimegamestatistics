@@ -12,8 +12,9 @@ MERGED_DIR = os.path.join(BASE_DIR, "merged_dataset")
 # Roboflow credentials
 API_KEY = os.getenv("ROBOFLOW_API_KEY")
 WORKSPACE = "rtgs-uifdg"
-PROJECT = "rtgs-omuwo"    
+PROJECT = "rtgs-omuwo"
 # -----------------------------------
+
 
 def merge_datasets():
     """Combine all annotation folders into one merged dataset."""
@@ -41,13 +42,15 @@ def merge_datasets():
         for img in os.listdir(img_path):
             base, ext = os.path.splitext(img)
             unique_name = f"{base}_{uuid.uuid4().hex[:6]}{ext}"
-            shutil.copy(os.path.join(img_path, img), os.path.join(images_dir, unique_name))
+            shutil.copy(
+                os.path.join(img_path, img), os.path.join(images_dir, unique_name)
+            )
 
             label_file = base + ".txt"
             if os.path.exists(os.path.join(lbl_path, label_file)):
                 shutil.copy(
                     os.path.join(lbl_path, label_file),
-                    os.path.join(labels_dir, unique_name.replace(ext, ".txt"))
+                    os.path.join(labels_dir, unique_name.replace(ext, ".txt")),
                 )
 
     print("All datasets merged into:", MERGED_DIR)

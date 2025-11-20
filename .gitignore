@@ -50,3 +50,6 @@ merged_dataset.zip
 # GitHub Actions cache / artifacts
 # ---------------------------
 .github/workflows/__pycache__/
+
+# davis git ignore
+annotation/* !annotation/davis**
