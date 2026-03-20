@@ -43,7 +43,8 @@
 #    │  VIDEO SOURCE TOGGLE — change this based on what you're doing:      │
 #    │                                                                      │
 #    │  export VIDEO_SOURCE="webcam"   → laptop/dev camera (default)       │
-#    │  export VIDEO_SOURCE="rtsp"     → Veo camera via MediaMTX on GCP    │
+#    │  export VIDEO_SOURCE="rtsp"     → MediaMTX RTSP output               │
+#    │                                  (Veo pushes RTMP into MediaMTX)      │
 #    └──────────────────────────────────────────────────────────────────────┘
 #
 #    2. Install all dependencies:
@@ -58,7 +59,7 @@
 #
 # ── ARCHITECTURE OVERVIEW ────────────────────────────────────────────────────
 #
-#   Veo Cam 3 (RTMP on game day)
+#   Veo Cam 2/3 (RTMP on game day; no direct RTSP output)
 #       │
 #       ▼
 #   MediaMTX on GCP  ──► RTSP stream (rtsp://localhost:8554/live)

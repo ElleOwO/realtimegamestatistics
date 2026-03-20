@@ -28,7 +28,8 @@ services:
     environment:
       # ── Video source selection ────────────────────────────────────────
       # "webcam"  = localhost camera (default, for testing)
-      # "rtsp"    = Veo camera via MediaMTX (game day)
+      # "rtsp"    = MediaMTX RTSP output (game day)
+      #            Veo Cam 2/3 pushes RTMP into MediaMTX; no direct Veo RTSP
       VIDEO_SOURCE: ${VIDEO_SOURCE:-webcam}
       WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
       RTSP_URL: ${RTSP_URL:-rtsp://mediamtx:8554/live}

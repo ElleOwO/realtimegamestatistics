@@ -66,6 +66,27 @@ Services:
 - Redis: `localhost:6379`
 - MediaMTX: `rtsp://localhost:8554/live`
 
+Veo camera note:
+
+- Veo Cam 2/3 do not expose direct RTSP for local playback.
+- Configure Veo Live custom destination with RTMP to your MediaMTX ingest:
+	- Example ingest URL: `rtmp://<HOST_OR_VM_IP>:1935/live`
+- Analytics should then consume MediaMTX RTSP output:
+	- `rtsp://localhost:8554/live` (host) or `rtsp://mediamtx:8554/live` (inside compose)
+
+### Veo live setup checklist
+
+1. In Veo Live, add a Custom destination.
+2. Set destination URL to your MediaMTX RTMP ingest, for example:
+	- `rtmp://YOUR_PUBLIC_IP:1935/live`
+3. Start MediaMTX before going live:
+	- `docker compose up -d mediamtx`
+4. Set analytics source to RTSP output from MediaMTX (not Veo directly):
+	- `export VIDEO_SOURCE=rtsp`
+	- `export RTSP_URL=rtsp://mediamtx:8554/live` (inside compose)
+	- `export RTSP_URL=rtsp://localhost:8554/live` (host run)
+5. Start analytics service, then check logs to confirm frames are being read.
+
 ## 4) Use GPU backend later (GCP/Compute Engine)
 
 When you are ready for NVIDIA runtime, override the backend Dockerfile:
@@ -86,6 +107,7 @@ Important keys:
 
 - `ROBOFLOW_API_KEY`
 - `VIDEO_SOURCE` (`webcam` or `rtsp`)
+- `RTSP_URL` (MediaMTX output stream, not a direct Veo URL)
 - `VITE_WS_URL`
 - `PLAYER_MODEL_ID`
 - `FIELD_MODEL_ID`
