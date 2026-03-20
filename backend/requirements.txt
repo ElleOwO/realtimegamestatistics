@@ -1,0 +1,52 @@
+# ============================================================================
+# USask Soccer Analytics Backend Dependencies
+# ============================================================================
+# CPU/GPU inference, video processing, web server, ML models
+
+# ── Computer Vision & ML ──────────────────────────────────────────────────
+opencv-python==4.8.1.78
+numpy==1.24.3
+scipy==1.11.4
+scikit-learn==1.3.2
+
+# ── Object Detection & Tracking ──────────────────────────────────────────
+ultralytics==8.0.212           # YOLOv8/v11 (includes supervision integration)
+supervision==0.16.0             # Detection helpers, ByteTrack, annotators
+huggingface-hub==0.19.3         # Download models from HuggingFace Hub
+torch==2.1.1                    # PyTorch (CPU by default; GPU via requirements-gpu.txt)
+torchvision==0.16.1
+
+# ── xG Model & Statistical Analysis ──────────────────────────────────────
+xgboost==2.0.2                  # Expected Goals model
+pandas==2.1.1
+scikit-optimize==0.9.1
+
+# ── Roboflow Models (field detection, team classification) ───────────────
+roboflow==1.1.3                 # Dataset management
+inference==0.4.6                # Roboflow inference (CPU; inference-gpu for GPU)
+sports==0.1.0                   # Roboflow sports utilities (team classifier, view transformer)
+umap-learn==0.5.5               # UMAP dimensionality reduction (used in sports.TeamClassifier)
+transformers==4.34.1            # For SiGLIP embeddings in team classification
+
+# ── Web Server & APIs ────────────────────────────────────────────────────
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+
+# ── GCP & Vertex AI ──────────────────────────────────────────────────────
+google-genai==0.3.0             # Vertex AI Gemini SDK
+google-cloud-aiplatform==1.38.0
+
+# ── Optional: Redis For Multi-Client Pub/Sub ───────────────────────────
+redis==5.0.1
+
+# ── Utilities ────────────────────────────────────────────────────────────
+gdown==4.7.1                    # Download from Google Drive
+tqdm==4.66.1                    # Progress bars
+python-dotenv==1.0.0            # Environment variable management
+more-itertools==10.1.0          # Iteration helpers
+
+# ── For GPU Support (optional, uncomment if running on NVIDIA GPU) ──────
+# These are installed separately in the GPU Compute Engine VM.
+# torch-cuda support is handled via the Dockerfile base image.

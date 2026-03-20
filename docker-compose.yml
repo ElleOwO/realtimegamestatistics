@@ -1,0 +1,160 @@
+# ============================================================================
+# USask Soccer Analytics — Full Stack Compose
+# ============================================================================
+#
+# QUICK START (local development):
+#   docker-compose up --build
+#
+# PRODUCTION (GCP Compute Engine with GPU):
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# SERVICES:
+#   - analytics   : FastAPI backend + OpenCV + YOLO (GPU enabled)
+#   - frontend    : React/Vite dashboard (port 80)
+#   - redis       : Pub/sub message broker (optional, for multi-client sync)
+#   - mediamtx    : RTSP/RTMP relay (optional, for Veo camera streaming)
+
+services:
+  # =========================================================================
+  # ANALYTICS ENGINE (FastAPI + Python)
+  # =========================================================================
+  analytics:
+    build:
+      context: .
+      dockerfile: ${BACKEND_DOCKERFILE:-backend/Dockerfile.cpu}
+    container_name: usask-analytics
+    ports:
+      - "8000:8000"
+    environment:
+      # ── Video source selection ────────────────────────────────────────
+      # "webcam"  = localhost camera (default, for testing)
+      # "rtsp"    = Veo camera via MediaMTX (game day)
+      VIDEO_SOURCE: ${VIDEO_SOURCE:-webcam}
+      WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
+      RTSP_URL: ${RTSP_URL:-rtsp://mediamtx:8554/live}
+
+      # ── API Keys ──────────────────────────────────────────────────────
+      ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY:-}
+
+      # ── GCP Credentials (for Gemini AI insights) ──────────────────────
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-your-project-id}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+
+      # ── Model IDs (swap to your fine-tuned model after training) ─────
+      PLAYER_MODEL_ID: ${PLAYER_MODEL_ID:-spen-rtgs-oc4ez/4}
+      FIELD_MODEL_ID: ${FIELD_MODEL_ID:-football-field-detection-f07vi/14}
+
+      # ── xG Model Path ─────────────────────────────────────────────────
+      XG_MODEL_PATH: ${XG_MODEL_PATH:-xg_model_womens.ubj}
+
+      # ── Redis (optional, for pub/sub) ─────────────────────────────────
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
+      # ── API Server ────────────────────────────────────────────────────
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+
+    volumes:
+      # Mount current backend code (dev only; remove for production)
+      - ./backend:/app:ro
+      # Persistent model cache
+      - ./models:/root/.cache/huggingface:rw
+    
+    depends_on:
+      - redis
+      - mediamtx
+    
+    networks:
+      - usask_network
+    
+    # GPU support (uncomment for production on NVIDIA machines)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    
+    restart: unless-stopped
+    
+    # Optional: for health checks in orchestration
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================================
+  # FRONTEND (React/Vite served by Nginx)
+  # =========================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: usask-dashboard
+    ports:
+      - "80:80"
+    environment:
+      # WebSocket endpoint (browser will connect here)
+      # For local dev: ws://localhost:8000/ws
+      # For production: wss://api.yourdomain.com/ws
+      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000/ws}
+    networks:
+      - usask_network
+    depends_on:
+      - analytics
+    restart: unless-stopped
+
+  # =========================================================================
+  # REDIS (Optional: for multi-client pub/sub)
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: usask-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - usask_network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # =========================================================================
+  # MEDIAMTX (Optional: RTSP/RTMP relay for Veo camera)
+  # =========================================================================
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: usask-mediamtx
+    ports:
+      - "1935:1935"    # RTMP (Veo camera pushes here)
+      - "8554:8554"    # RTSP (analytics engine consumes this)
+      - "8888:8888"    # WebRTC
+    volumes:
+      - ./mediamtx.yml:/home/mediamtx/mediamtx.yml:ro
+    networks:
+      - usask_network
+    environment:
+      # Default config; see mediamtx.yml for advanced tuning
+      RTMP_LISTEN_PORT: 1935
+      RTSP_LISTEN_PORT: 8554
+    restart: unless-stopped
+
+# ============================================================================
+# Volumes & Networks
+# ============================================================================
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  usask_network:
+    driver: bridge
