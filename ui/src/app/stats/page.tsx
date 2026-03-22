@@ -1,24 +1,22 @@
 'use client';
 
-import { MatchTimeline } from '../components/MatchTimeline';
-import { XGChart } from '../components/XGChart';
+import { TeamStatComparison } from '../components/TeamStatComparison';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
-import { FileText, Trophy, Target, TrendingUp, Users } from 'lucide-react';
+import { FileText, Trophy, TrendingUp, Target, Users } from 'lucide-react';
 
 export default function MatchReports() {
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 pb-12">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Performance Intelligence & Timeline */}
+        {/* Left: Tactical Comparison & Performance Intelligence */}
         <div className="lg:col-span-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[450px]">
-            <XGChart />
-            <MatchTimeline />
+          <div className="h-[450px]">
+            <TeamStatComparison />
           </div>
 
-          <Card className="border-zinc-800  bg-card ">
+          <Card className="border-zinc-800 bg-card">
              <CardHeader className="p-6 border-b border-zinc-800 flex flex-row items-center gap-3">
                 <FileText className="w-6 h-6 text-zinc-100" />
                 <div>
@@ -36,10 +34,10 @@ export default function MatchReports() {
                         ['Tackles Won', '76%', 76],
                         ['Aerial Duels', '58%', 58],
                       ].map(([label, value, progress]) => (
-                        <div key={label} className="space-y-1.5">
+                        <div key={label as string} className="space-y-1.5">
                           <div className="flex items-center justify-between text-[10px] font-black uppercase">
-                            <span className="text-zinc-500">{label}</span>
-                            <span className="text-white">{value}</span>
+                            <span className="text-zinc-500">{label as string}</span>
+                            <span className="text-white">{value as string}</span>
                           </div>
                           <Progress value={progress as number} className="h-1 bg-zinc-800" indicatorClassName="bg-zinc-300" />
                         </div>
@@ -69,7 +67,7 @@ export default function MatchReports() {
 
         {/* Right: Box Score & Comparison */}
         <div className="lg:col-span-4 space-y-6">
-           <Card className="border-zinc-800  bg-card ">
+           <Card className="border-zinc-800 bg-card">
               <CardHeader className="p-6 border-b border-zinc-800">
                  <CardTitle className="text-lg font-black uppercase tracking-tight text-white flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-zinc-100" />
@@ -100,7 +98,7 @@ export default function MatchReports() {
               </CardContent>
            </Card>
 
-           <Card className="border-zinc-800 bg-card  p-6 rounded-3xl">
+           <Card className="border-zinc-800 bg-card p-6 rounded-3xl">
               <div className="flex items-center gap-4 mb-4">
                  <div className="w-12 h-12 rounded-2xl bg-zinc-200 flex items-center justify-center text-zinc-900">
                     <Trophy className="w-6 h-6" />
