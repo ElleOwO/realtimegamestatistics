@@ -5,12 +5,9 @@ import { usePathname } from "next/navigation";
 import {
   Activity,
   BarChart3,
-  ShieldCheck,
   TimerReset,
   Users,
-  TrendingUp,
 } from "lucide-react";
-import { Badge } from "./ui/badge";
 
 const navItems = [
   { path: "/", label: "Overview", icon: Activity },
@@ -73,32 +70,6 @@ export function Navigation() {
 
         {/* Right Section: Score & Stats (Pushed to end) */}
         <div className="flex items-center gap-8 flex-1 justify-end">
-          {/* Stats Segment */}
-          <div className="hidden lg:flex items-center gap-6 px-8 h-10 border-r border-border">
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 mb-0.5">
-                <TrendingUp className="w-3 h-3 text-primary" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                  Momentum
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-20 h-1.5 bg-border rounded-full overflow-hidden flex">
-                  <div className="h-full bg-primary w-[62%]" />
-                </div>
-                <span className="text-[10px] font-black text-foreground/80">
-                  +12.4%
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col border-l border-border pl-6">
-              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">
-                Team xG
-              </span>
-              <span className="text-xs font-black text-primary">1.84</span>
-            </div>
-          </div>
-
           {/* Score Segment */}
           <div className="flex items-center gap-4 bg-card px-5 py-2.5 rounded-2xl border border-border">
             <div className="flex items-center gap-3">
@@ -122,17 +93,6 @@ export function Navigation() {
 
           {/* Status & Time Segment */}
           <div className="flex items-center gap-4 border-l border-border pl-8">
-            <div className="hidden xl:flex flex-col items-end">
-              <div className="flex items-center gap-1.5 text-primary mb-0.5">
-                <ShieldCheck className="h-3 w-3" />
-                <span className="text-[9px] font-black uppercase tracking-widest">
-                  Feed Secure
-                </span>
-              </div>
-              <Badge className="bg-primary/10 text-primary border-none text-[8px] font-black uppercase h-4 px-1.5">
-                Live
-              </Badge>
-            </div>
             <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-card border border-border">
               <TimerReset className="h-4 w-4 text-primary" />
               <span className="text-sm font-black font-mono text-foreground tracking-wider">
