@@ -20,37 +20,42 @@ export function XGChart() {
   ];
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="p-4 md:p-6 pb-2 md:pb-2">
-        <CardTitle className="text-base md:text-lg font-semibold">xG Timeline</CardTitle>
+    <Card className="h-full flex flex-col border-border bg-card overflow-hidden">
+      <CardHeader className="p-6 border-b border-border">
+        <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">xG Momentum</CardTitle>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Cumulative Expected Goals</p>
       </CardHeader>
       
-      <CardContent className="flex-1 min-h-0 p-4 md:p-6 pt-2 md:pt-2">
+      <CardContent className="flex-1 min-h-0 p-6">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
             <XAxis 
               dataKey="minute" 
               stroke="var(--muted-foreground)"
-              tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 900 }}
+              axisLine={{ stroke: 'var(--border)' }}
             />
             <YAxis 
               stroke="var(--muted-foreground)"
-              tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 900 }}
+              axisLine={{ stroke: 'var(--border)' }}
             />
             <Tooltip 
               contentStyle={{ 
                 backgroundColor: 'var(--card)', 
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)',
-                color: 'var(--card-foreground)',
-                fontSize: '14px'
+                color: 'var(--foreground)',
+                fontSize: '12px',
+                fontWeight: 900,
+                textTransform: 'uppercase'
               }}
-              itemStyle={{ color: 'var(--card-foreground)' }}
+              itemStyle={{ fontSize: '12px', fontWeight: 900 }}
             />
             <Legend 
-              wrapperStyle={{ color: 'var(--foreground)', fontSize: '13px' }}
-              iconType="line"
+              wrapperStyle={{ color: 'var(--foreground)', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', paddingTop: '20px' }}
+              iconType="circle"
             />
             <Line 
               key="home-line"
@@ -67,10 +72,10 @@ export function XGChart() {
               key="away-line"
               type="monotone" 
               dataKey="away" 
-              stroke="var(--destructive)" 
+              stroke="var(--secondary)" 
               strokeWidth={2.5}
               name="Calgary (Away)"
-              dot={{ fill: 'var(--destructive)', r: 3 }}
+              dot={{ fill: 'var(--secondary)', r: 3 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
             />

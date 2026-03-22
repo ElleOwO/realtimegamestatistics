@@ -43,7 +43,7 @@ export function PitchView() {
 
   return (
     <div className="w-full h-full bg-background flex items-center justify-center p-4 overflow-hidden">
-      <div className={`relative w-full h-full max-w-5xl max-h-full ${aspectClass} bg-[#072a1b] rounded-3xl border-2 border-emerald-900/50 overflow-hidden flex items-center justify-center transition-all duration-500`}>
+      <div className={`relative w-full h-full max-w-5xl max-h-full ${aspectClass} bg-[#072a1b] rounded-3xl border-2 border-[#0B6A41]/30 overflow-hidden flex items-center justify-center transition-all duration-500`}>
         {/* Pitch Markings */}
         <svg
           className="absolute inset-0 w-full h-full opacity-40 pointer-events-none p-1.5"
@@ -52,23 +52,23 @@ export function PitchView() {
         >
           {isPortrait ? (
             <>
-              <rect x="0" y="0" width="60" height="100" fill="none" stroke="#10b981" strokeWidth="0.4" />
-              <line x1="0" y1="50" x2="60" y2="50" stroke="#10b981" strokeWidth="0.4" />
-              <circle cx="30" cy="50" r="8" fill="none" stroke="#10b981" strokeWidth="0.4" />
-              <rect x="15" y="84" width="30" height="16" fill="none" stroke="#10b981" strokeWidth="0.4" />
-              <rect x="15" y="0" width="30" height="16" fill="none" stroke="#10b981" strokeWidth="0.4" />
-              <rect x="24" y="94" width="12" height="6" fill="none" stroke="#10b981" strokeWidth="0.4" />
-              <rect x="24" y="0" width="12" height="6" fill="none" stroke="#10b981" strokeWidth="0.4" />
+              <rect x="0" y="0" width="60" height="100" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              <line x1="0" y1="50" x2="60" y2="50" stroke="#0B6A41" strokeWidth="0.4" />
+              <circle cx="30" cy="50" r="8" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              <rect x="15" y="84" width="30" height="16" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              <rect x="15" y="0" width="30" height="16" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              <rect x="24" y="94" width="12" height="6" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              <rect x="24" y="0" width="12" height="6" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
             </>
           ) : (
             <>
-              <rect x="0" y="0" width="100" height="60" fill="none" stroke="#10b981" strokeWidth="0.3" />
-              <line x1="50" y1="0" x2="50" y2="60" stroke="#10b981" strokeWidth="0.3" />
-              <circle cx="50" cy="30" r="8" fill="none" stroke="#10b981" strokeWidth="0.3" />
-              <rect x="0" y="15" width="16" height="30" fill="none" stroke="#10b981" strokeWidth="0.3" />
-              <rect x="84" y="15" width="16" height="30" fill="none" stroke="#10b981" strokeWidth="0.3" />
-              <rect x="0" y="24" width="6" height="12" fill="none" stroke="#10b981" strokeWidth="0.3" />
-              <rect x="94" y="24" width="6" height="12" fill="none" stroke="#10b981" strokeWidth="0.3" />
+              <rect x="0" y="0" width="100" height="60" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              <line x1="50" y1="0" x2="50" y2="60" stroke="#0B6A41" strokeWidth="0.3" />
+              <circle cx="50" cy="30" r="8" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              <rect x="0" y="15" width="16" height="30" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              <rect x="84" y="15" width="16" height="30" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              <rect x="0" y="24" width="6" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              <rect x="94" y="24" width="6" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
             </>
           )}
         </svg>
@@ -87,7 +87,7 @@ export function PitchView() {
                   cx={cx}
                   cy={cy}
                   r="1.8"
-                  fill="#10b981"
+                  fill="#0B6A41"
                   stroke="#000"
                   strokeWidth="0.2"
                 />

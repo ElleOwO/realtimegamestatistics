@@ -26,53 +26,53 @@ export function MatchTimeline() {
 
   const getEventIcon = (type: MatchEvent['type'], team: MatchEvent['team']) => {
     switch (type) {
-      case 'goal': return <Trophy className="w-4 h-4 text-zinc-100" />;
-      case 'card': return <div className="w-3 h-4 bg-zinc-400 rounded-sm" />;
-      case 'sub': return <PlayCircle className="w-4 h-4 text-zinc-400" />;
-      case 'chance': return <AlertCircle className="w-4 h-4 text-zinc-300" />;
+      case 'goal': return <Trophy className="w-4 h-4 text-foreground" />;
+      case 'card': return <div className="w-3 h-4 bg-secondary rounded-sm" />;
+      case 'sub': return <PlayCircle className="w-4 h-4 text-muted-foreground" />;
+      case 'chance': return <AlertCircle className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
   return (
-    <Card className="h-full border-zinc-800  bg-card overflow-hidden flex flex-col">
-      <CardHeader className="p-6 border-b border-zinc-800 flex flex-row items-center justify-between">
+    <Card className="h-full border-border bg-card overflow-hidden flex flex-col">
+      <CardHeader className="p-6 border-b border-border flex flex-row items-center justify-between">
         <div className="flex items-center gap-3">
-          <Clock className="w-6 h-6 text-zinc-100" />
+          <Clock className="w-6 h-6 text-foreground" />
           <div>
-            <CardTitle className="text-xl font-black uppercase tracking-tight text-white">Live Match Timeline</CardTitle>
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Key Tactical Moments</p>
+            <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground">Live Match Timeline</CardTitle>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Key Tactical Moments</p>
           </div>
         </div>
-        <Badge variant="outline" className="border-zinc-800 text-zinc-400 font-black uppercase text-[9px]">62:34 ELAPSED</Badge>
+        <Badge variant="outline" className="border-border text-muted-foreground font-black uppercase text-[9px]">62:34 ELAPSED</Badge>
       </CardHeader>
 
       <CardContent className="flex-1 p-0">
         <ScrollArea className="h-full">
           <div className="p-6 space-y-8 relative">
             {/* Vertical Line */}
-            <div className="absolute left-[39px] top-6 bottom-6 w-px bg-zinc-800" />
+            <div className="absolute left-[39px] top-6 bottom-6 w-px bg-border" />
 
             {events.map((event, index) => (
               <div key={index} className="flex gap-6 relative group">
                 <div className="w-8 flex-shrink-0 text-right">
-                   <span className="text-sm font-black text-zinc-500 group-hover:text-zinc-300 transition-colors">{event.minute}'</span>
+                   <span className="text-sm font-black text-muted-foreground group-hover:text-foreground transition-colors">{event.minute}'</span>
                 </div>
 
-                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 z-10 group-hover:border-zinc-500 transition-colors ">
+                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-card border border-border z-10 group-hover:border-primary transition-colors ">
                    {getEventIcon(event.type, event.team)}
                 </div>
 
                 <div className="flex-1">
-                   <div className={`p-4 rounded-2xl border transition-all ${event.type === 'goal' ? 'bg-zinc-900 border-zinc-700' : 'bg-transparent border-transparent'} group-hover:bg-zinc-800/50`}>
+                   <div className={`p-4 rounded-2xl border transition-all ${event.type === 'goal' ? 'bg-muted/30 border-border' : 'bg-transparent border-transparent'} group-hover:bg-muted/50`}>
                       <div className="flex items-center justify-between mb-1">
-                         <h4 className={`text-sm font-black uppercase tracking-tight ${event.team === 'home' ? 'text-white' : 'text-zinc-400'}`}>
+                         <h4 className={`text-sm font-black uppercase tracking-tight ${event.team === 'home' ? 'text-primary' : 'text-muted-foreground'}`}>
                            {event.title}
                          </h4>
                          {event.xg && (
-                           <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">xG: {event.xg}</span>
+                           <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">xG: {event.xg}</span>
                          )}
                       </div>
-                      <p className="text-xs text-zinc-500 font-bold leading-relaxed">{event.description}</p>
+                      <p className="text-xs text-muted-foreground font-bold leading-relaxed">{event.description}</p>
                    </div>
                 </div>
               </div>
