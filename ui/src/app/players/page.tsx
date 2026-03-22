@@ -1,6 +1,5 @@
 'use client';
 
-import { MatchControl } from '../components/MatchControl';
 import { PlayerPerformanceMatrix } from '../components/PlayerPerformanceMatrix';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -11,8 +10,6 @@ import { Button } from '../components/ui/button';
 export default function PlayerStats() {
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 pb-12">
-      <MatchControl />
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Performance Monitoring Area */}
         <div className="lg:col-span-8">

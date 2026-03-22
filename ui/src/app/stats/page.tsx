@@ -1,6 +1,5 @@
 'use client';
 
-import { MatchControl } from '../components/MatchControl';
 import { MatchTimeline } from '../components/MatchTimeline';
 import { XGChart } from '../components/XGChart';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -11,8 +10,6 @@ import { FileText, Trophy, Target, TrendingUp, Users } from 'lucide-react';
 export default function MatchReports() {
   return (
     <div className="mx-auto max-w-[1700px] space-y-6 pb-12">
-      <MatchControl />
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Performance Intelligence & Timeline */}
         <div className="lg:col-span-8 space-y-6">

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Navigation } from './components/Navigation';
+import { ClientLayout } from './components/ClientLayout';
 import '../styles/index.css';
 
 export const metadata: Metadata = {
@@ -15,10 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-background text-foreground antialiased font-serif">
-        <Navigation />
-        <main className="flex-1 p-4 md:p-6 lg:p-8">
+        <ClientLayout>
           {children}
-        </main>
+        </ClientLayout>
       </body>
     </html>
   );
