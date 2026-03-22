@@ -8,7 +8,6 @@ import {
   ShieldCheck,
   TimerReset,
   Users,
-  LayoutGrid,
   TrendingUp,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
@@ -29,8 +28,12 @@ export function Navigation() {
         {/* Left Section: Logo & Nav Links */}
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-3 pr-8 border-r border-zinc-800">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white">
-              <LayoutGrid className="h-5 w-5" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white overflow-hidden border border-zinc-800">
+              <img 
+                src="/university-of-saskatchewan.svg" 
+                alt="University of Saskatchewan Logo" 
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="hidden sm:block">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 leading-none mb-1">RTGS v2.4</p>
