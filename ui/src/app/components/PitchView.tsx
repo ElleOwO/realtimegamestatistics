@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Activity, Grid3X3, Users, Settings2 } from "lucide-react";
+import { Activity, Grid3X3, Users, Settings2, LayoutGrid } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import {
@@ -10,27 +10,22 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-export function PitchView() {
-  const [isPortrait, setIsPortrait] = useState(false);
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showZones, setShowZones] = useState(false);
-  const [showPlayers, setShowPlayers] = useState(true);
+type Formation = "4-3-3" | "4-4-2" | "3-5-2" | "5-4-1";
 
-  useEffect(() => {
-    const checkOrientation = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-    
-    checkOrientation();
-    window.addEventListener("resize", checkOrientation);
-    return () => window.removeEventListener("resize", checkOrientation);
-  }, []);
+interface PlayerPos {
+  id: number;
+  x: number;
+  y: number;
+  position: string;
+}
 
-  // Home Team (US) - Set up in a 4-3-3 formation
-  const players = [
+const FORMATIONS: Record<Formation, PlayerPos[]> = {
+  "4-3-3": [
     { id: 1, x: 8, y: 30, position: "GK" },
     { id: 2, x: 22, y: 12, position: "LB" },
     { id: 3, x: 22, y: 48, position: "RB" },
@@ -43,7 +38,66 @@ export function PitchView() {
     { id: 10, x: 75, y: 15, position: "LW" },
     { id: 11, x: 75, y: 45, position: "RW" },
     { id: 12, x: 85, y: 30, position: "ST" },
-  ];
+  ],
+  "4-4-2": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 22, y: 12, position: "LB" },
+    { id: 3, x: 22, y: 48, position: "RB" },
+    { id: 4, x: 18, y: 24, position: "CB" },
+    { id: 5, x: 18, y: 36, position: "CB" },
+    { id: 6, x: 45, y: 22, position: "LM" },
+    { id: 7, x: 45, y: 38, position: "RM" },
+    { id: 8, x: 40, y: 26, position: "CM" },
+    { id: 9, x: 40, y: 34, position: "CM" },
+    { id: 10, x: 80, y: 25, position: "ST" },
+    { id: 11, x: 80, y: 35, position: "ST" },
+  ],
+  "3-5-2": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 20, y: 30, position: "CB" },
+    { id: 3, x: 20, y: 18, position: "CB" },
+    { id: 4, x: 20, y: 42, position: "CB" },
+    { id: 5, x: 45, y: 10, position: "LWB" },
+    { id: 6, x: 45, y: 50, position: "RWB" },
+    { id: 7, x: 35, y: 30, position: "CDM" },
+    { id: 8, x: 50, y: 22, position: "CM" },
+    { id: 9, x: 50, y: 38, position: "CM" },
+    { id: 10, x: 80, y: 25, position: "ST" },
+    { id: 11, x: 80, y: 35, position: "ST" },
+  ],
+  "5-4-1": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 20, y: 30, position: "CB" },
+    { id: 3, x: 20, y: 18, position: "CB" },
+    { id: 4, x: 20, y: 42, position: "CB" },
+    { id: 5, x: 25, y: 10, position: "LWB" },
+    { id: 6, x: 25, y: 50, position: "RWB" },
+    { id: 7, x: 45, y: 22, position: "LM" },
+    { id: 8, x: 45, y: 38, position: "RM" },
+    { id: 9, x: 40, y: 26, position: "CM" },
+    { id: 10, x: 40, y: 34, position: "CM" },
+    { id: 11, x: 85, y: 30, position: "ST" },
+  ],
+};
+
+export function PitchView() {
+  const [isPortrait, setIsPortrait] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showZones, setShowZones] = useState(false);
+  const [showPlayers, setShowPlayers] = useState(true);
+  const [formation, setFormation] = useState<Formation>("4-3-3");
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    
+    checkOrientation();
+    window.addEventListener("resize", checkOrientation);
+    return () => window.removeEventListener("resize", checkOrientation);
+  }, []);
+
+  const players = FORMATIONS[formation];
 
   // Heatmap points (mock data)
   const heatPoints = [
@@ -68,11 +122,12 @@ export function PitchView() {
     <div className="w-full h-full bg-background flex flex-col items-center justify-center p-4 overflow-hidden gap-4">
       {/* Pitch Controls */}
       <div className="flex items-center gap-3 bg-card p-2 px-4 rounded-2xl border border-border shadow-lg">
+        {/* View Options */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-primary transition-colors">
               <Settings2 className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Display Options</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">Display</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56 bg-card border-border">
@@ -107,9 +162,31 @@ export function PitchView() {
 
         <div className="h-4 w-px bg-border mx-1" />
 
+        {/* Formation Selection */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-secondary transition-colors">
+              <LayoutGrid className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Formation: {formation}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48 bg-card border-border">
+            <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Select System</DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuRadioGroup value={formation} onValueChange={(v) => setFormation(v as Formation)}>
+              <DropdownMenuRadioItem value="4-3-3" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-3-3 Attacking</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="4-4-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-4-2 Classic</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="3-5-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">3-5-2 Wingbacks</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="5-4-1" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">5-4-1 Defensive</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="h-4 w-px bg-border mx-1" />
+
         <div className="flex items-center gap-2">
-          {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap Active</Badge>}
-          {showZones && <Badge className="bg-foreground/5 text-foreground/40 border-border text-[8px] font-black h-5 uppercase tracking-tighter">Zones Active</Badge>}
+          {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap</Badge>}
+          {showZones && <Badge className="bg-secondary/10 text-secondary border-secondary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Zones</Badge>}
         </div>
       </div>
 
@@ -204,7 +281,7 @@ export function PitchView() {
               {players.map((p) => {
                 const { cx, cy } = getCoords(p.x, p.y);
                 return (
-                  <g key={p.id} className="transition-all duration-700 ease-in-out">
+                  <g key={`${formation}-${p.id}`} className="transition-all duration-700 ease-in-out">
                     <circle
                       cx={cx}
                       cy={cy}
