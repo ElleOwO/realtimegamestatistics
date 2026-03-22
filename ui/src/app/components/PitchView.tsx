@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Activity, Share2, Grid3X3, Users, Settings2 } from "lucide-react";
+import { Activity, Grid3X3, Users, Settings2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import {
@@ -16,7 +16,6 @@ import {
 export function PitchView() {
   const [isPortrait, setIsPortrait] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showPassing, setShowPassing] = useState(false);
   const [showZones, setShowZones] = useState(false);
   const [showPlayers, setShowPlayers] = useState(true);
 
@@ -44,18 +43,6 @@ export function PitchView() {
     { id: 10, x: 75, y: 15, position: "LW" },
     { id: 11, x: 75, y: 45, position: "RW" },
     { id: 12, x: 85, y: 30, position: "ST" },
-  ];
-
-  // Passing connections (mock data)
-  const passes = [
-    { from: 6, to: 9, weight: 12 },
-    { from: 9, to: 12, weight: 8 },
-    { from: 10, to: 12, weight: 5 },
-    { from: 11, to: 12, weight: 6 },
-    { from: 4, to: 6, weight: 15 },
-    { from: 5, to: 6, weight: 14 },
-    { from: 2, to: 10, weight: 9 },
-    { from: 3, to: 11, weight: 7 },
   ];
 
   // Heatmap points (mock data)
@@ -108,14 +95,6 @@ export function PitchView() {
               Heatmap (Match Load)
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
-              checked={showPassing}
-              onCheckedChange={setShowPassing}
-              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
-            >
-              <Share2 className="w-3.5 h-3.5 mr-2" />
-              Passing Patterns
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
               checked={showZones}
               onCheckedChange={setShowZones}
               className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
@@ -130,7 +109,6 @@ export function PitchView() {
 
         <div className="flex items-center gap-2">
           {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap Active</Badge>}
-          {showPassing && <Badge className="bg-secondary/10 text-secondary border-secondary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Pass Map Active</Badge>}
           {showZones && <Badge className="bg-foreground/5 text-foreground/40 border-border text-[8px] font-black h-5 uppercase tracking-tighter">Zones Active</Badge>}
         </div>
       </div>
@@ -217,29 +195,6 @@ export function PitchView() {
                   <stop offset="100%" stopColor="#DBCC52" stopOpacity="0" />
                 </radialGradient>
               </defs>
-            </g>
-          )}
-
-          {/* Passing Patterns Layer */}
-          {showPassing && (
-            <g className="transition-opacity duration-500">
-              {passes.map((pass, i) => {
-                const fromP = players.find(p => p.id === pass.from)!;
-                const toP = players.find(p => p.id === pass.to)!;
-                const { cx: x1, cy: y1 } = getCoords(fromP.x, fromP.y);
-                const { cx: x2, cy: y2 } = getCoords(toP.x, toP.y);
-                return (
-                  <line
-                    key={`pass-${i}`}
-                    x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke="#DBCC52"
-                    strokeWidth={pass.weight / 15}
-                    strokeLinecap="round"
-                    opacity="0.4"
-                    strokeDasharray={`${pass.weight/2} 1`}
-                  />
-                );
-              })}
             </g>
           )}
 
