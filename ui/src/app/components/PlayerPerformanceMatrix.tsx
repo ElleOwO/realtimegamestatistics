@@ -36,7 +36,7 @@ export function PlayerPerformanceMatrix() {
   };
 
   return (
-    <Card className="h-full flex flex-col border-zinc-800 shadow-xl bg-card backdrop-blur-sm">
+    <Card className="h-full flex flex-col border-zinc-800  bg-card ">
       <CardHeader className="flex flex-row items-center justify-between p-6 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
           <Activity className="w-6 h-6 text-zinc-100" />

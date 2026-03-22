@@ -19,7 +19,7 @@ export default function PlayerStats() {
         {/* Actionable Bench & Sub Management */}
         <div className="lg:col-span-4 space-y-6">
           {/* Critical Fatigue Alerts */}
-          <Card className="border-zinc-800 bg-zinc-900/30 shadow-lg">
+          <Card className="border-zinc-800 bg-zinc-900/30 ">
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between">
                  <div className="flex items-center gap-2">
@@ -48,7 +48,7 @@ export default function PlayerStats() {
           </Card>
 
           {/* Available Bench */}
-          <Card className="border-zinc-800 bg-zinc-900/30 shadow-xl">
+          <Card className="border-zinc-800 bg-zinc-900/30 ">
             <CardHeader className="p-6 pb-2 border-b border-zinc-800 flex flex-row items-center justify-between">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-zinc-100" />

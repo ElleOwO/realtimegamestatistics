@@ -18,7 +18,7 @@ export default function MatchReports() {
             <MatchTimeline />
           </div>
 
-          <Card className="border-zinc-800 shadow-xl bg-card backdrop-blur-sm">
+          <Card className="border-zinc-800  bg-card ">
              <CardHeader className="p-6 border-b border-zinc-800 flex flex-row items-center gap-3">
                 <FileText className="w-6 h-6 text-zinc-100" />
                 <div>
@@ -69,7 +69,7 @@ export default function MatchReports() {
 
         {/* Right: Box Score & Comparison */}
         <div className="lg:col-span-4 space-y-6">
-           <Card className="border-zinc-800 shadow-xl bg-card backdrop-blur-sm">
+           <Card className="border-zinc-800  bg-card ">
               <CardHeader className="p-6 border-b border-zinc-800">
                  <CardTitle className="text-lg font-black uppercase tracking-tight text-white flex items-center gap-2">
                     <Trophy className="w-5 h-5 text-zinc-100" />
@@ -100,7 +100,7 @@ export default function MatchReports() {
               </CardContent>
            </Card>
 
-           <Card className="border-zinc-800 bg-card shadow-lg p-6 rounded-3xl">
+           <Card className="border-zinc-800 bg-card  p-6 rounded-3xl">
               <div className="flex items-center gap-4 mb-4">
                  <div className="w-12 h-12 rounded-2xl bg-zinc-200 flex items-center justify-center text-zinc-900">
                     <Trophy className="w-6 h-6" />

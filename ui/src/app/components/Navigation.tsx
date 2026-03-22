@@ -24,11 +24,11 @@ export function Navigation() {
   const isActive = (path: string) => (path === '/' ? pathname === '/' : pathname.startsWith(path));
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-background/95 backdrop-blur">
+    <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-background">
       <div className="flex h-20 items-center px-4 md:px-6 gap-8">
         {/* Logo Section */}
         <div className="flex items-center gap-3 pr-8 border-r border-zinc-800">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <LayoutGrid className="h-5 w-5" />
           </div>
           <div className="hidden sm:block">
@@ -39,7 +39,7 @@ export function Navigation() {
 
         {/* Live Scoreboard Integration */}
         <div className="flex items-center gap-8 flex-1">
-          <div className="flex items-center gap-4 bg-zinc-900/50 px-5 py-2.5 rounded-2xl border border-zinc-800/50">
+          <div className="flex items-center gap-4 bg-zinc-900/50 px-5 py-2.5 rounded-2xl border border-zinc-800">
             <div className="flex items-center gap-3">
               <div className="w-7 h-7 rounded-full bg-zinc-100 text-zinc-900 flex items-center justify-center font-black text-[10px] border border-zinc-300">US</div>
               <span className="text-xl font-black tracking-tighter text-white">2</span>
@@ -83,7 +83,7 @@ export function Navigation() {
                 href={item.path}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
                   active
-                    ? 'bg-emerald-600/10 text-emerald-500 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.2)]'
+                    ? 'bg-emerald-600/10 text-emerald-500 border border-emerald-600/20'
                     : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200'
                 }`}
               >
@@ -103,7 +103,7 @@ export function Navigation() {
             </div>
             <Badge className="bg-emerald-600/10 text-emerald-500 border-none text-[8px] font-black uppercase h-4 px-1.5">Live</Badge>
           </div>
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 shadow-inner">
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800">
             <TimerReset className="h-4 w-4 text-emerald-500" />
             <span className="text-sm font-black font-mono text-zinc-100 tracking-wider">62:34</span>
           </div>

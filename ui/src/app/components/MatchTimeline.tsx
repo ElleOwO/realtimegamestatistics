@@ -34,7 +34,7 @@ export function MatchTimeline() {
   };
 
   return (
-    <Card className="h-full border-zinc-800 shadow-xl bg-card overflow-hidden flex flex-col">
+    <Card className="h-full border-zinc-800  bg-card overflow-hidden flex flex-col">
       <CardHeader className="p-6 border-b border-zinc-800 flex flex-row items-center justify-between">
         <div className="flex items-center gap-3">
           <Clock className="w-6 h-6 text-zinc-100" />
@@ -58,7 +58,7 @@ export function MatchTimeline() {
                    <span className="text-sm font-black text-zinc-500 group-hover:text-zinc-300 transition-colors">{event.minute}'</span>
                 </div>
 
-                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 z-10 group-hover:border-zinc-500 transition-colors shadow-sm">
+                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 z-10 group-hover:border-zinc-500 transition-colors ">
                    {getEventIcon(event.type, event.team)}
                 </div>
 
