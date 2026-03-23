@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Activity, Grid3X3, Users, Settings2, LayoutGrid } from "lucide-react";
+import { Activity, Grid3X3, Users, Settings2, LayoutGrid, Target } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import {
@@ -14,6 +14,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { useSocket } from "./SocketProvider";
 
 type Formation = "4-3-3" | "4-4-2" | "3-5-2" | "5-4-1";
 
@@ -81,6 +82,7 @@ const FORMATIONS: Record<Formation, PlayerPos[]> = {
 };
 
 export function PitchView() {
+  const { data: realtimeData } = useSocket();
   const [isPortrait, setIsPortrait] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showZones, setShowZones] = useState(false);
@@ -97,9 +99,7 @@ export function PitchView() {
     return () => window.removeEventListener("resize", checkOrientation);
   }, []);
 
-  const players = FORMATIONS[formation];
-
-  // Heatmap points (mock data)
+  // Heatmap points (mock data if not realtime)
   const heatPoints = [
     { x: 50, y: 30, r: 15, opacity: 0.3 },
     { x: 75, y: 15, r: 12, opacity: 0.4 },
@@ -107,6 +107,14 @@ export function PitchView() {
     { x: 85, y: 30, r: 10, opacity: 0.5 },
     { x: 35, y: 30, r: 18, opacity: 0.25 },
   ];
+
+  // Map backend metres (origin at centre, -52.5 to 52.5 and -34 to 34)
+  // to frontend SVG units (0 to 100 on X, 0 to 60 on Y)
+  const mapMetresToSvg = (x_m: number, y_m: number) => {
+    const x = ((x_m + 52.5) / 105) * 100;
+    const y = ((y_m + 34) / 68) * 60;
+    return { x, y };
+  };
 
   const getCoords = (x: number, y: number) => {
     if (isPortrait) {
@@ -162,29 +170,33 @@ export function PitchView() {
 
         <div className="h-4 w-px bg-border mx-1" />
 
-        {/* Formation Selection */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-secondary transition-colors">
-              <LayoutGrid className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Formation: {formation}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48 bg-card border-border">
-            <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Select System</DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-border" />
-            <DropdownMenuRadioGroup value={formation} onValueChange={(v) => setFormation(v as Formation)}>
-              <DropdownMenuRadioItem value="4-3-3" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-3-3 Attacking</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="4-4-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-4-2 Classic</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="3-5-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">3-5-2 Wingbacks</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="5-4-1" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">5-4-1 Defensive</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <div className="h-4 w-px bg-border mx-1" />
+        {/* Formation Selection (only shown if no realtime data) */}
+        {!realtimeData && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-secondary transition-colors">
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Formation: {formation}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48 bg-card border-border">
+                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Select System</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border" />
+                <DropdownMenuRadioGroup value={formation} onValueChange={(v) => setFormation(v as Formation)}>
+                  <DropdownMenuRadioItem value="4-3-3" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-3-3 Attacking</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="4-4-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-4-2 Classic</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="3-5-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">3-5-2 Wingbacks</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="5-4-1" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">5-4-1 Defensive</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="h-4 w-px bg-border mx-1" />
+          </>
+        )}
 
         <div className="flex items-center gap-2">
+          {realtimeData && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live</Badge>}
           {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap</Badge>}
           {showZones && <Badge className="bg-secondary/10 text-secondary border-secondary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Zones</Badge>}
         </div>
@@ -275,35 +287,89 @@ export function PitchView() {
             </g>
           )}
 
+          {/* Ball Layer (Realtime only) */}
+          {realtimeData?.ball && (
+            <g>
+               {(() => {
+                 const mapped = mapMetresToSvg(realtimeData.ball[0], realtimeData.ball[1]);
+                 const { cx, cy } = getCoords(mapped.x, mapped.y);
+                 return (
+                   <circle
+                     cx={cx}
+                     cy={cy}
+                     r="1.2"
+                     fill="#FFF"
+                     stroke="#000"
+                     strokeWidth="0.3"
+                     className="transition-all duration-300 ease-linear"
+                   />
+                 );
+               })()}
+            </g>
+          )}
+
           {/* Players Layer */}
           {showPlayers && (
             <g className="transition-opacity duration-500">
-              {players.map((p) => {
-                const { cx, cy } = getCoords(p.x, p.y);
-                return (
-                  <g key={`${formation}-${p.id}`} className="transition-all duration-700 ease-in-out">
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r="1.8"
-                      fill="#0B6A41"
-                      stroke="#000"
-                      strokeWidth="0.2"
-                    />
-                    <text
-                      x={cx}
-                      y={cy - 3}
-                      textAnchor="middle"
-                      fill="#ececec"
-                      fontSize="1.8"
-                      fontWeight="black"
-                      className="uppercase tracking-tighter opacity-95 select-none font-sans"
-                    >
-                      {p.position}
-                    </text>
-                  </g>
-                );
-              })}
+              {realtimeData ? (
+                // Realtime players from backend
+                realtimeData.players.map((p) => {
+                  const mapped = mapMetresToSvg(p.x_m, p.y_m);
+                  const { cx, cy } = getCoords(mapped.x, mapped.y);
+                  return (
+                    <g key={`player-${p.id}`} className="transition-all duration-300 ease-linear">
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r="1.8"
+                        fill={p.team === 0 ? "#0B6A41" : "#FF1493"}
+                        stroke="#FFF"
+                        strokeWidth="0.3"
+                        className={p.is_sprinting ? "animate-pulse" : ""}
+                      />
+                      <text
+                        x={cx}
+                        y={cy - 3}
+                        textAnchor="middle"
+                        fill="#FFF"
+                        fontSize="1.5"
+                        fontWeight="black"
+                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                      >
+                        {p.id}
+                      </text>
+                    </g>
+                  );
+                })
+              ) : (
+                // Static formation fallback
+                FORMATIONS[formation].map((p) => {
+                  const { cx, cy } = getCoords(p.x, p.y);
+                  return (
+                    <g key={`${formation}-${p.id}`} className="transition-all duration-700 ease-in-out">
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r="1.8"
+                        fill="#0B6A41"
+                        stroke="#000"
+                        strokeWidth="0.2"
+                      />
+                      <text
+                        x={cx}
+                        y={cy - 3}
+                        textAnchor="middle"
+                        fill="#ececec"
+                        fontSize="1.8"
+                        fontWeight="black"
+                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                      >
+                        {p.position}
+                      </text>
+                    </g>
+                  );
+                })
+              )}
             </g>
           )}
         </svg>

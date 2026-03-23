@@ -12,6 +12,7 @@ import {
   Activity,
 } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
+import { useSocket } from "./SocketProvider";
 
 interface PlayerPerformance {
   id: number;
@@ -24,8 +25,34 @@ interface PlayerPerformance {
   keyStat: string;
 }
 
+const PLAYER_NAME_MAP: Record<number, string> = {
+  1: "Goalkeeper",
+  2: "L. Bronze",
+  3: "N. Charles",
+  4: "M. Bright",
+  5: "A. Greenwood",
+  6: "K. Walsh",
+  7: "L. James",
+  8: "G. Stanway",
+  9: "E. Toone",
+  10: "S. Hansen",
+  11: "L. Hemp",
+};
+
 export function PlayerPerformanceMatrix() {
-  const players: PlayerPerformance[] = [
+  const { data } = useSocket();
+
+  // If we have realtime data, map it to our UI structure
+  const players: PlayerPerformance[] = data ? data.players.filter(p => p.team === 0).map(p => ({
+    id: p.id,
+    name: PLAYER_NAME_MAP[p.id] || `Player ${p.id}`,
+    position: p.id === 1 ? "GK" : p.id < 6 ? "DF" : p.id < 9 ? "MF" : "FW",
+    rating: 7.0 + (Math.random() * 2), // Mock rating logic
+    trend: Math.random() > 0.5 ? "up" : "stable",
+    fatigue: Math.min(Math.round((p.distance_km || 0) * 10), 100),
+    impact: Math.min(Math.round((p.top_speed_ms || 0) * 8), 100),
+    keyStat: `${(p.distance_km || 0).toFixed(2)} km • ${p.is_sprinting ? "SPRINTING" : "Active"}`,
+  })) : [
     {
       id: 10,
       name: "S. Hansen",
@@ -35,16 +62,6 @@ export function PlayerPerformanceMatrix() {
       fatigue: 65,
       impact: 92,
       keyStat: "2 Goals, 1 Assist",
-    },
-    {
-      id: 7,
-      name: "M. Kerr",
-      position: "FW",
-      rating: 7.2,
-      trend: "stable",
-      fatigue: 30,
-      impact: 65,
-      keyStat: "5 Shots, 3 On Target",
     },
     {
       id: 6,
@@ -57,16 +74,6 @@ export function PlayerPerformanceMatrix() {
       keyStat: "94% Pass Accuracy",
     },
     {
-      id: 11,
-      name: "A. Hemp",
-      position: "MF",
-      rating: 6.8,
-      trend: "down",
-      fatigue: 72,
-      impact: 45,
-      keyStat: "12 Ball Recoveries",
-    },
-    {
       id: 4,
       name: "M. Bright",
       position: "DF",
@@ -75,16 +82,6 @@ export function PlayerPerformanceMatrix() {
       fatigue: 25,
       impact: 78,
       keyStat: "8 Interceptions",
-    },
-    {
-      id: 8,
-      name: "L. Williamson",
-      position: "DF",
-      rating: 8.2,
-      trend: "up",
-      fatigue: 40,
-      impact: 82,
-      keyStat: "100% Aerial Duels Won",
     },
   ];
 
@@ -115,10 +112,10 @@ export function PlayerPerformanceMatrix() {
         </div>
         <div className="flex gap-2">
           <Badge
-            variant="outline"
-            className="border-border text-muted-foreground font-bold uppercase text-[9px]"
+            variant={data ? "default" : "outline"}
+            className={data ? "bg-green-500/10 text-green-500 border-green-500/20 text-[9px] font-black uppercase" : "border-border text-muted-foreground font-bold uppercase text-[9px]"}
           >
-            LIVE UPDATING
+            {data ? "LIVE STREAMING" : "DEMO MODE"}
           </Badge>
         </div>
       </CardHeader>
@@ -155,7 +152,7 @@ export function PlayerPerformanceMatrix() {
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-black text-foreground tracking-tighter">
-                      {player.rating}
+                      {player.rating.toFixed(1)}
                     </div>
                     <div className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">
                       Match Rating

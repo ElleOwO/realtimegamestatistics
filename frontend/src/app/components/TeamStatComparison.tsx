@@ -2,6 +2,8 @@
 
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Target, Zap, Activity, Users, Shield, TrendingUp } from 'lucide-react';
+import { useSocket } from './SocketProvider';
+import { Badge } from './ui/badge';
 
 interface StatRowProps {
   label: string;
@@ -37,21 +39,57 @@ function StatRow({ label, homeValue, awayValue, homePercent, icon }: StatRowProp
 }
 
 export function TeamStatComparison() {
+  const { data } = useSocket();
+
   const stats = [
-    { label: 'Expected Goals (xG)', home: 1.84, away: 1.51, homePercent: 55, icon: <Target className="w-3 h-3 text-primary" /> },
-    { label: 'Total Shots', home: 18, away: 12, homePercent: 60, icon: <Zap className="w-3 h-3 text-primary" /> },
-    { label: 'Shots on Target', home: 12, away: 5, homePercent: 70, icon: <Activity className="w-3 h-3 text-primary" /> },
-    { label: 'Possession', home: '58%', away: '42%', homePercent: 58, icon: <Users className="w-3 h-3 text-primary" /> },
-    { label: 'Big Chances', home: 4, away: 2, homePercent: 66, icon: <TrendingUp className="w-3 h-3 text-primary" /> },
-    { label: 'Accurate Passes', home: 482, away: 315, homePercent: 60, icon: <Shield className="w-3 h-3 text-primary" /> },
+    { 
+      label: 'Expected Goals (xG)', 
+      home: data?.total_xg_team0 ?? 1.84, 
+      away: data?.total_xg_team1 ?? 1.51, 
+      homePercent: data ? (data.total_xg_team0 / (data.total_xg_team0 + data.total_xg_team1 + 0.1)) * 100 : 55, 
+      icon: <Target className="w-3 h-3 text-primary" /> 
+    },
+    { 
+      label: 'Possession', 
+      home: `${data?.possession.team0_pct ?? 58}%`, 
+      away: `${data?.possession.team1_pct ?? 42}%`, 
+      homePercent: data?.possession.team0_pct ?? 58, 
+      icon: <Users className="w-3 h-3 text-primary" /> 
+    },
+    { 
+        label: 'Defensive Line (m)', 
+        home: data?.defensive_line_height_m.toFixed(1) ?? '42.5', 
+        away: '-', 
+        homePercent: data ? (data.defensive_line_height_m / 105) * 100 : 40, 
+        icon: <Shield className="w-3 h-3 text-primary" /> 
+    },
+    { 
+        label: 'Attack Width (m)', 
+        home: data?.width_of_attack_m.toFixed(1) ?? '38.2', 
+        away: '-', 
+        homePercent: data ? (data.width_of_attack_m / 68) * 100 : 56, 
+        icon: <TrendingUp className="w-3 h-3 text-primary" /> 
+    },
+    { 
+        label: 'Transition Speed (s)', 
+        home: data?.transition_speed_s.toFixed(1) ?? '4.2', 
+        away: '-', 
+        homePercent: data ? (1 - data.transition_speed_s / 15) * 100 : 70, 
+        icon: <Zap className="w-3 h-3 text-primary" /> 
+    },
   ];
 
   return (
     <Card className="h-full border-border bg-card overflow-hidden flex flex-col">
       <CardHeader className="p-6 border-b border-border flex flex-row items-center justify-between">
         <div>
-          <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">Tactical Comparison</CardTitle>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Home (US) vs Away (Calgary)</p>
+          <div className="flex items-center gap-2 mb-1">
+            <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">Tactical Comparison</CardTitle>
+            {data && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live Feed</Badge>}
+          </div>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            {data?.possession.team0_name ?? "Home"} vs {data?.possession.team1_name ?? "Away"}
+          </p>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
