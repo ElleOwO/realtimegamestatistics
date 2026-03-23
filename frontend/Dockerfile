@@ -1,6 +1,11 @@
 # Stage 1: Build
 FROM node:20-slim AS builder
 WORKDIR /app
+
+# Add build-time environment variables
+ARG NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
 COPY package.json package-lock.json ./
 RUN npm install --legacy-peer-deps
 COPY . .
