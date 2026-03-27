@@ -29,10 +29,11 @@ umap-learn                   # UMAP dimensionality reduction (used in sports.Tea
 transformers                 # For SiGLIP embeddings in team classification
 
 # ── Web Server & APIs ────────────────────────────────────────────────────
-fastapi
-uvicorn[standard]
-websockets
-python-multipart
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+pydantic==2.7.4             # Explicit FastAPI model support for backend and payload schemas
 
 # ── GCP & Vertex AI ──────────────────────────────────────────────────────
 google-genai                 # Vertex AI Gemini SDK

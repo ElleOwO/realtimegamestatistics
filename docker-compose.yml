@@ -1,12 +1,32 @@
+# ============================================================================
+# USask Soccer Analytics — Full Stack Compose
+# ============================================================================
+#
+# QUICK START (local development):
+#   docker-compose up --build
+#
+# PRODUCTION (Compute Engine, CPU-first):
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# SERVICES:
+#   - analytics   : FastAPI backend + OpenCV + YOLO (CPU)
+#   - frontend    : React/Vite dashboard (port 80)
+#   - redis       : Pub/sub message broker (optional, for multi-client sync)
+#   - mediamtx    : RTSP/RTMP relay (optional, for Veo camera streaming)
+
 services:
   analytics:
     build:
       context: .
-      dockerfile: ${BACKEND_DOCKERFILE:-backend/Dockerfile.cpu}
+      dockerfile: backend/Dockerfile.cpu
     container_name: usask-analytics
     ports:
       - "8000:8000"
     environment:
+      # ── Video source selection ────────────────────────────────────────
+      # "webcam"  = localhost camera (default, for testing)
+      # "rtsp"    = MediaMTX RTSP output (game day)
+      #            Veo Cam 2/3 pushes RTMP into MediaMTX; no direct Veo RTSP
       VIDEO_SOURCE: ${VIDEO_SOURCE:-webcam}
       WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
       RTSP_URL: ${RTSP_URL:-rtsp://mediamtx:8554/live}
@@ -24,7 +44,8 @@ services:
 
     volumes:
       - ./backend:/app:ro
-      - ./models:/root/.cache/huggingface:rw
+      # Persistent model cache / exported artifacts live under backend/models
+      - ./backend/models:/root/.cache/huggingface:rw
     
     depends_on:
       - redis
@@ -32,15 +53,6 @@ services:
     
     networks:
       - usask_network
-    
-    # GPU support (uncomment for production on NVIDIA machines)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
     
     restart: unless-stopped
     
