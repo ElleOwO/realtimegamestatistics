@@ -5,11 +5,11 @@
 # QUICK START (local development):
 #   docker-compose up --build
 #
-# PRODUCTION (GCP Compute Engine with GPU):
+# PRODUCTION (Compute Engine, CPU-first):
 #   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # SERVICES:
-#   - analytics   : FastAPI backend + OpenCV + YOLO (GPU enabled)
+#   - analytics   : FastAPI backend + OpenCV + YOLO (CPU)
 #   - frontend    : React/Vite dashboard (port 80)
 #   - redis       : Pub/sub message broker (optional, for multi-client sync)
 #   - mediamtx    : RTSP/RTMP relay (optional, for Veo camera streaming)
@@ -21,7 +21,7 @@ services:
   analytics:
     build:
       context: .
-      dockerfile: ${BACKEND_DOCKERFILE:-backend/Dockerfile.cpu}
+      dockerfile: backend/Dockerfile.cpu
     container_name: usask-analytics
     ports:
       - "8000:8000"
@@ -58,8 +58,8 @@ services:
     volumes:
       # Mount current backend code (dev only; remove for production)
       - ./backend:/app:ro
-      # Persistent model cache
-      - ./models:/root/.cache/huggingface:rw
+      # Persistent model cache / exported artifacts live under backend/models
+      - ./backend/models:/root/.cache/huggingface:rw
     
     depends_on:
       - redis
@@ -67,15 +67,6 @@ services:
     
     networks:
       - usask_network
-    
-    # GPU support (uncomment for production on NVIDIA machines)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
     
     restart: unless-stopped
     

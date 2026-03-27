@@ -99,7 +99,10 @@ from inference import get_model
 import xgboost as xgb
 
 # --- Web / async ---
-import uvicorn
+try:
+    import uvicorn
+except ImportError:  # pragma: no cover - lets the module import in lean shells.
+    uvicorn = None
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -127,6 +130,20 @@ from sports.annotators.soccer import (
 from sports.common.team import TeamClassifier
 from sports.common.view import ViewTransformer
 from sports.configs.soccer import SoccerPitchConfiguration
+
+# --- Modularized backend helpers (package-first, script fallback) ---
+try:
+    from .analytics import tactical_metrics as modular_tactical
+    from .analytics import player_registry as modular_registry
+    from .analytics import gemini_coach as modular_gemini
+    from .api import payloads as modular_payloads
+    from .xg_model import xg_utils as modular_xg
+except ImportError:
+    from analytics import tactical_metrics as modular_tactical
+    from analytics import player_registry as modular_registry
+    from analytics import gemini_coach as modular_gemini
+    from api import payloads as modular_payloads
+    from xg_model import xg_utils as modular_xg
 
 
 # =============================================================================
@@ -196,7 +213,7 @@ PITCH_HALF_WIDTH   =  34.0  # from centre to touchline
 POSSESSION_WINDOW = 150   # frames (~5 seconds at 30 fps)
 
 # --- xG model ---
-# Train this in football_ai.ipynb → "xG Model Training" section.
+# Train this in backend/training_notebooks/football_ai.ipynb → "xG Model Training" section.
 # Kaggle dataset refs are in the file header above.
 XG_MODEL_PATH = os.environ.get("XG_MODEL_PATH", "xg_model_womens.ubj")
 
@@ -216,6 +233,9 @@ ZONE_Y_SPLIT = 0.0   # horizontal mid-axis
 USASK_GREEN = "#0B6A41"
 
 CONFIG = SoccerPitchConfiguration()
+
+# Shared registry storage now lives in the modular analytics package.
+player_registry = modular_registry.player_registry
 
 
 # =============================================================================
@@ -287,6 +307,8 @@ async def websocket_endpoint(ws: WebSocket):
 
 def start_api_server():
     """Launch FastAPI/uvicorn in a background daemon thread."""
+    if uvicorn is None:
+        raise RuntimeError("uvicorn is required to run the backend server")
     uvicorn.run(app, host=API_HOST, port=API_PORT, log_level="warning")
 
 
@@ -339,7 +361,7 @@ def publish_to_redis(payload: dict):
 #     - Kaggle: "Soccer Analytics" by Enes Öner
 #               https://www.kaggle.com/datasets/enesoner/soccer-analytics
 #
-#   The training notebook is in football_ai.ipynb → "xG Model Training" section.
+#   The training notebook is in backend/training_notebooks/football_ai.ipynb → "xG Model Training" section.
 #   After training, save the model as:  xg_model_womens.ubj
 #   Then set:  export XG_MODEL_PATH="/path/to/xg_model_womens.ubj"
 #
@@ -356,7 +378,7 @@ def load_xg_model() -> Optional[xgb.Booster]:
         print(f"✅ xG model loaded from {XG_MODEL_PATH}")
         return model
     print(f"⚠️  xG model not found at '{XG_MODEL_PATH}' — using formula fallback.")
-    print("   Train the model in football_ai.ipynb and set XG_MODEL_PATH.")
+    print("   Train the model in backend/training_notebooks/football_ai.ipynb and set XG_MODEL_PATH.")
     return None
 
 
@@ -1141,7 +1163,7 @@ def main():
 
     # ── 11.3  Gemini ──────────────────────────────────────────────────────────
     global gemini_client
-    gemini_client = init_gemini()
+    gemini_client = modular_gemini.init_gemini()
 
     # ── 11.4  Load detection models ───────────────────────────────────────────
     print("🤖 Loading detection models…")
@@ -1152,7 +1174,7 @@ def main():
         model_id=FIELD_DETECTION_MODEL_ID,  api_key=API_KEY)
 
     # ── 11.5  Load xG model ───────────────────────────────────────────────────
-    xg_model = load_xg_model()
+    xg_model = modular_xg.load_xg_model()
 
     # ── 11.6  Open video source ────────────────────────────────────────────────
     #
@@ -1337,23 +1359,23 @@ def main():
         team1_xy = pitch_players_xy[t1_mask] if t1_mask.any() else np.array([]).reshape(0, 2)
 
         # ── H: Tactical metrics ───────────────────────────────────────────────
-        update_possession_log(possession_log, pitch_ball_xy, team0_xy, team1_xy)
-        possession_pct  = compute_possession(possession_log)
-        def_line_height = compute_defensive_line_height(team1_xy)
-        atk_width       = compute_width_of_attack(team0_xy)
+        modular_tactical.update_possession_log(possession_log, pitch_ball_xy, team0_xy, team1_xy)
+        possession_pct  = modular_tactical.compute_possession(possession_log)
+        def_line_height = modular_tactical.compute_defensive_line_height(team1_xy)
+        atk_width       = modular_tactical.compute_width_of_attack(team0_xy)
 
         if len(pitch_ball_xy) > 0:
             ball_history.append((match_secs, pitch_ball_xy[0][0], pitch_ball_xy[0][1]))
-        transition_spd = compute_transition_speed(ball_history)
-        hull_area      = compute_convex_hull_area(team1_xy)
+        transition_spd = modular_tactical.compute_transition_speed(ball_history)
+        hull_area      = modular_tactical.compute_convex_hull_area(team1_xy)
 
-        zone_t0 = compute_zone_stats(team0_xy)
-        zone_t1 = compute_zone_stats(team1_xy)
+        zone_t0 = modular_tactical.compute_zone_stats(team0_xy)
+        zone_t1 = modular_tactical.compute_zone_stats(team1_xy)
 
         # ── I: Update heatmaps ────────────────────────────────────────────────
-        if t0_mask.any(): update_heatmap(heatmap_team0, team0_xy)
-        if t1_mask.any(): update_heatmap(heatmap_team1, team1_xy)
-        if len(pitch_ball_xy) > 0: update_heatmap(heatmap_ball, pitch_ball_xy)
+        if t0_mask.any(): modular_tactical.update_heatmap(heatmap_team0, team0_xy)
+        if t1_mask.any(): modular_tactical.update_heatmap(heatmap_team1, team1_xy)
+        if len(pitch_ball_xy) > 0: modular_tactical.update_heatmap(heatmap_ball, pitch_ball_xy)
 
         # ── J: Update player registry ─────────────────────────────────────────
         player_payloads = []
@@ -1363,8 +1385,8 @@ def main():
             team_id = int(merged.class_id[i])
             if i < len(pitch_players_xy):
                 pos   = pitch_players_xy[i]
-                stats = update_player_registry(tid, team_id, pos, now, player_registry)
-                player_payloads.append(serialize_player(stats))
+                stats = modular_registry.update_player_registry(tid, team_id, pos, now, player_registry)
+                player_payloads.append(modular_registry.serialize_player(stats))
 
         # ── K: xG timeline ────────────────────────────────────────────────────
         cur_min = int(match_min)
@@ -1385,15 +1407,15 @@ def main():
         hmap_payload = None
         if frame_id % 30 == 0:
             hmap_payload = {
-                "team0": get_heatmap_payload(heatmap_team0),
-                "team1": get_heatmap_payload(heatmap_team1),
-                "ball":  get_heatmap_payload(heatmap_ball),
+                "team0": modular_tactical.get_heatmap_payload(heatmap_team0),
+                "team1": modular_tactical.get_heatmap_payload(heatmap_team1),
+                "ball":  modular_tactical.get_heatmap_payload(heatmap_ball),
             }
 
         # ── M: Gemini AI insight (every 2 minutes) ────────────────────────────
         if ENABLE_GEMINI and gemini_client is not None and now - last_ai_request_ts > AI_INSIGHT_INTERVAL:
             last_ai_request_ts = now
-            prompt = build_gemini_prompt(
+            prompt = modular_gemini.build_gemini_prompt(
                 match_min, possession_pct, total_xg[0], total_xg[1],
                 transition_spd, hull_area, def_line_height, atk_width,
                 zone_t0, zone_t1, player_registry, key_events,
@@ -1407,13 +1429,13 @@ def main():
             try:
                 loop = asyncio.get_event_loop()
                 fut  = asyncio.run_coroutine_threadsafe(
-                    request_gemini_insight(prompt, match_min), loop)
+                    modular_gemini.request_gemini_insight(prompt, match_min, gemini_client), loop)
                 fut.add_done_callback(_store)
             except RuntimeError:
                 pass
 
         # ── N: Build + broadcast JSON payload ─────────────────────────────────
-        payload = build_payload(
+        payload = modular_payloads.build_payload(
             frame_id=frame_id, timestamp=now,
             possession_pct=possession_pct,
             defensive_line_height=def_line_height,

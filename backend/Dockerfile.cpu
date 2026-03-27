@@ -24,7 +24,9 @@ COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY backend/soccer_analytics.py /app/
+# Copy the full backend package layout so the entrypoint can import the
+# modular analytics packages alongside the legacy compatibility module.
+COPY backend/ /app/
 
 # Health check (optional, for compose/orchestration)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
@@ -32,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 
 EXPOSE 8000
 
-CMD ["python", "soccer_analytics.py"]
+CMD ["python", "main.py"]
