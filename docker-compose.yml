@@ -15,9 +15,6 @@
 #   - mediamtx    : RTSP/RTMP relay (optional, for Veo camera streaming)
 
 services:
-  # =========================================================================
-  # ANALYTICS ENGINE (FastAPI + Python)
-  # =========================================================================
   analytics:
     build:
       context: .
@@ -33,30 +30,19 @@ services:
       VIDEO_SOURCE: ${VIDEO_SOURCE:-webcam}
       WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
       RTSP_URL: ${RTSP_URL:-rtsp://mediamtx:8554/live}
-
-      # ── API Keys ──────────────────────────────────────────────────────
       ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY:-}
 
-      # ── GCP Credentials (for Gemini AI insights) ──────────────────────
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-your-project-id}
-      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
-
-      # ── Model IDs (swap to your fine-tuned model after training) ─────
       PLAYER_MODEL_ID: ${PLAYER_MODEL_ID:-spen-rtgs-oc4ez/4}
       FIELD_MODEL_ID: ${FIELD_MODEL_ID:-football-field-detection-f07vi/14}
 
-      # ── xG Model Path ─────────────────────────────────────────────────
       XG_MODEL_PATH: ${XG_MODEL_PATH:-xg_model_womens.ubj}
 
-      # ── Redis (optional, for pub/sub) ─────────────────────────────────
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
 
-      # ── API Server ────────────────────────────────────────────────────
       API_HOST: 0.0.0.0
       API_PORT: 8000
 
     volumes:
-      # Mount current backend code (dev only; remove for production)
       - ./backend:/app:ro
       # Persistent model cache / exported artifacts live under backend/models
       - ./backend/models:/root/.cache/huggingface:rw
@@ -85,14 +71,14 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
     container_name: usask-dashboard
     ports:
-      - "80:80"
+      - "3000:3000"
     environment:
       # WebSocket endpoint (browser will connect here)
-      # For local dev: ws://localhost:8000/ws
-      # For production: wss://api.yourdomain.com/ws
-      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000/ws}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
     networks:
       - usask_network
     depends_on:

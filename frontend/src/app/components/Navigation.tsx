@@ -1,55 +1,49 @@
-import { Link, useLocation } from 'react-router';
-import { Activity, BarChart3, Users, FileText, Menu } from 'lucide-react';
-import { useState } from 'react';
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  Activity,
+  BarChart3,
+  TimerReset,
+  Users,
+} from "lucide-react";
+
+const navItems = [
+  { path: "/", label: "Overview", icon: Activity },
+  { path: "/players", label: "Squad", icon: Users },
+  { path: "/stats", label: "Stats", icon: BarChart3 },
+];
 
 export function Navigation() {
-  const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const navItems = [
-    { path: '/', label: 'Live Dashboard', icon: Activity },
-    { path: '/players', label: 'Player Stats', icon: Users },
-    { path: '/tactical', label: 'Tactical View', icon: BarChart3 },
-    { path: '/reports', label: 'Match Reports', icon: FileText },
-  ];
-
-  const isActive = (path: string) => {
-    if (path === '/') {
-      return location.pathname === '/';
-    }
-    return location.pathname.startsWith(path);
-  };
+  const pathname = usePathname();
+  const isActive = (path: string) =>
+    path === "/" ? pathname === "/" : pathname.startsWith(path);
 
   return (
-    <>
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="md:hidden fixed top-4 left-4 z-50 w-12 h-12 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl flex items-center justify-center hover:bg-[#222] transition-colors"
-      >
-        <Menu className="w-6 h-6 text-white" />
-      </button>
-
-      {/* Sidebar Navigation */}
-      <nav
-        className={`fixed left-0 top-0 h-full bg-[#1a1a1a] border-r border-[#2a2a2a] z-40 transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
-      >
-        <div className="w-64 md:w-20 lg:w-64 h-full flex flex-col p-4">
-          {/* Logo */}
-          <div className="mb-8 flex items-center gap-3">
-            <div className="w-12 h-12 bg-[#0B6A41] rounded-xl flex items-center justify-center flex-shrink-0">
-              <Activity className="w-7 h-7 text-white" />
+    <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-background">
+      <div className="flex h-20 items-center px-4 md:px-6 gap-8">
+        {/* Left Section: Logo & Nav Links */}
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-3 pr-8 border-r border-zinc-800">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white overflow-hidden border border-zinc-800">
+              <img
+                src="/university-of-saskatchewan.svg"
+                alt="University of Saskatchewan Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
-            <div className="block md:hidden lg:block">
-              <h2 className="text-white font-bold text-lg">Analytics</h2>
-              <p className="text-gray-400 text-xs">Coach Dashboard</p>
+            <div className="hidden sm:block">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary leading-none mb-1">
+                Dashboard
+              </p>
+              <h2 className="text-sm font-black text-foreground tracking-tight uppercase leading-none">
+                USASK Women's Soccer
+              </h2>
             </div>
           </div>
 
-          {/* Navigation Items */}
-          <div className="flex-1 space-y-2">
+          <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
@@ -57,50 +51,57 @@ export function Navigation() {
               return (
                 <Link
                   key={item.path}
-                  to={item.path}
-                  onClick={() => setIsOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  href={item.path}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
                     active
-                      ? 'bg-[#0B6A41] text-white'
-                      : 'text-gray-400 hover:bg-[#222] hover:text-white'
+                      ? "bg-primary/10 text-primary border border-primary/20"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   }`}
                 >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  <span className="block md:hidden lg:block font-medium">
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="uppercase tracking-widest">
                     {item.label}
                   </span>
                 </Link>
               );
             })}
+          </nav>
+        </div>
+
+        {/* Right Section: Score & Stats (Pushed to end) */}
+        <div className="flex items-center gap-8 flex-1 justify-end">
+          {/* Score Segment */}
+          <div className="flex items-center gap-4 bg-card px-5 py-2.5 rounded-2xl border border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-black text-[10px] border border-primary/50">
+                US
+              </div>
+              <span className="text-xl font-black tracking-tighter text-foreground">
+                2
+              </span>
+            </div>
+            <div className="text-muted-foreground/50 font-bold text-sm">VS</div>
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-black tracking-tighter text-foreground">
+                1
+              </span>
+              <div className="w-7 h-7 rounded-full bg-muted text-muted-foreground flex items-center justify-center font-black text-[10px] border border-border">
+                CG
+              </div>
+            </div>
           </div>
 
-          {/* Footer */}
-          <div className="mt-auto pt-4 border-t border-[#2a2a2a]">
-            <div className="px-4 py-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-red-500 font-semibold text-sm block md:hidden lg:block">
-                  LIVE
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 block md:hidden lg:block">
-                U of S vs Calgary
-              </p>
-              <p className="text-xs text-gray-500 block md:hidden lg:block">
+          {/* Status & Time Segment */}
+          <div className="flex items-center gap-4 border-l border-border pl-8">
+            <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-card border border-border">
+              <TimerReset className="h-4 w-4 text-primary" />
+              <span className="text-sm font-black font-mono text-foreground tracking-wider">
                 62:34
-              </p>
+              </span>
             </div>
           </div>
         </div>
-      </nav>
-
-      {/* Overlay for mobile */}
-      {isOpen && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/50 z-30"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
-    </>
+      </div>
+    </header>
   );
 }

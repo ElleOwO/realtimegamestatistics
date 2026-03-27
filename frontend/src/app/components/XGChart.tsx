@@ -1,13 +1,11 @@
+"use client";
+
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import type { AnalyticsTimelinePoint } from '../hooks/useAnalytics';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 
-interface XGChartProps {
-  data?: AnalyticsTimelinePoint[];
-}
-
-export function XGChart({ data: liveTimeline }: XGChartProps) {
+export function XGChart() {
   // Mock xG data over 90 minutes
-  const fallbackData = [
+  const data = [
     { id: 'min-0', minute: 0, home: 0, away: 0 },
     { id: 'min-10', minute: 10, home: 0.15, away: 0.08 },
     { id: 'min-20', minute: 20, home: 0.32, away: 0.21 },
@@ -21,53 +19,52 @@ export function XGChart({ data: liveTimeline }: XGChartProps) {
     { id: 'min-90', minute: 90, home: 1.84, away: 1.51 },
   ];
 
-  const data = liveTimeline && liveTimeline.length > 0
-    ? liveTimeline.map((p) => ({
-        id: `min-${p.minute}`,
-        minute: p.minute,
-        home: p.team0_xg,
-        away: p.team1_xg,
-      }))
-    : fallbackData;
-
   return (
-    <div className="bg-[#1a1a1a] rounded-xl md:rounded-2xl p-4 md:p-6 h-full flex flex-col border border-[#2a2a2a]">
-      <h2 className="text-white text-base md:text-lg font-semibold mb-3 md:mb-4">xG Timeline</h2>
+    <Card className="h-full flex flex-col border-border bg-card overflow-hidden">
+      <CardHeader className="p-6 border-b border-border">
+        <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">xG Momentum</CardTitle>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Cumulative Expected Goals</p>
+      </CardHeader>
       
-      <div className="flex-1 min-h-0">
+      <CardContent className="flex-1 min-h-0 p-6">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
             <XAxis 
               dataKey="minute" 
-              stroke="#6b7280"
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
+              stroke="var(--muted-foreground)"
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 900 }}
+              axisLine={{ stroke: 'var(--border)' }}
             />
             <YAxis 
-              stroke="#6b7280"
-              tick={{ fill: '#9ca3af', fontSize: 12 }}
+              stroke="var(--muted-foreground)"
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 900 }}
+              axisLine={{ stroke: 'var(--border)' }}
             />
             <Tooltip 
               contentStyle={{ 
-                backgroundColor: '#1a1a1a', 
-                border: '1px solid #2a2a2a',
-                borderRadius: '8px',
-                color: '#fff',
-                fontSize: '14px'
+                backgroundColor: 'var(--card)', 
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                color: 'var(--foreground)',
+                fontSize: '12px',
+                fontWeight: 900,
+                textTransform: 'uppercase'
               }}
+              itemStyle={{ fontSize: '12px', fontWeight: 900 }}
             />
             <Legend 
-              wrapperStyle={{ color: '#fff', fontSize: '13px' }}
-              iconType="line"
+              wrapperStyle={{ color: 'var(--foreground)', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', paddingTop: '20px' }}
+              iconType="circle"
             />
             <Line 
               key="home-line"
               type="monotone" 
               dataKey="home" 
-              stroke="#0B6A41" 
+              stroke="var(--primary)" 
               strokeWidth={2.5}
               name="U of S (Home)"
-              dot={{ fill: '#0B6A41', r: 3 }}
+              dot={{ fill: 'var(--primary)', r: 3 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
             />
@@ -75,16 +72,16 @@ export function XGChart({ data: liveTimeline }: XGChartProps) {
               key="away-line"
               type="monotone" 
               dataKey="away" 
-              stroke="#dc2626" 
+              stroke="var(--secondary)" 
               strokeWidth={2.5}
               name="Calgary (Away)"
-              dot={{ fill: '#dc2626', r: 3 }}
+              dot={{ fill: 'var(--secondary)', r: 3 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

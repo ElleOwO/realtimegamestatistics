@@ -1,169 +1,378 @@
-import { useState } from 'react';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
-import type { AnalyticsPlayer } from '../hooks/useAnalytics';
+"use client";
 
-interface PitchViewProps {
-  players?: AnalyticsPlayer[];
-  ball?: [number, number] | null;
+import { useState, useEffect } from "react";
+import { Activity, Grid3X3, Users, Settings2, LayoutGrid, Target } from "lucide-react";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
+import { useSocket } from "./SocketProvider";
+
+type Formation = "4-3-3" | "4-4-2" | "3-5-2" | "5-4-1";
+
+interface PlayerPos {
+  id: number;
+  x: number;
+  y: number;
+  position: string;
 }
 
-function toSvgX(xMeters: number): number {
-  // Backend sends pitch coords in metres centered at (0,0); SVG uses 0..100.
-  return ((xMeters + 52.5) / 105) * 100;
-}
+const FORMATIONS: Record<Formation, PlayerPos[]> = {
+  "4-3-3": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 22, y: 12, position: "LB" },
+    { id: 3, x: 22, y: 48, position: "RB" },
+    { id: 4, x: 18, y: 24, position: "CB" },
+    { id: 5, x: 18, y: 36, position: "CB" },
+    { id: 6, x: 35, y: 30, position: "CDM" },
+    { id: 7, x: 45, y: 15, position: "LCM" },
+    { id: 8, x: 45, y: 45, position: "RCM" },
+    { id: 9, x: 55, y: 30, position: "CAM" },
+    { id: 10, x: 75, y: 15, position: "LW" },
+    { id: 11, x: 75, y: 45, position: "RW" },
+    { id: 12, x: 85, y: 30, position: "ST" },
+  ],
+  "4-4-2": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 22, y: 12, position: "LB" },
+    { id: 3, x: 22, y: 48, position: "RB" },
+    { id: 4, x: 18, y: 24, position: "CB" },
+    { id: 5, x: 18, y: 36, position: "CB" },
+    { id: 6, x: 45, y: 22, position: "LM" },
+    { id: 7, x: 45, y: 38, position: "RM" },
+    { id: 8, x: 40, y: 26, position: "CM" },
+    { id: 9, x: 40, y: 34, position: "CM" },
+    { id: 10, x: 80, y: 25, position: "ST" },
+    { id: 11, x: 80, y: 35, position: "ST" },
+  ],
+  "3-5-2": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 20, y: 30, position: "CB" },
+    { id: 3, x: 20, y: 18, position: "CB" },
+    { id: 4, x: 20, y: 42, position: "CB" },
+    { id: 5, x: 45, y: 10, position: "LWB" },
+    { id: 6, x: 45, y: 50, position: "RWB" },
+    { id: 7, x: 35, y: 30, position: "CDM" },
+    { id: 8, x: 50, y: 22, position: "CM" },
+    { id: 9, x: 50, y: 38, position: "CM" },
+    { id: 10, x: 80, y: 25, position: "ST" },
+    { id: 11, x: 80, y: 35, position: "ST" },
+  ],
+  "5-4-1": [
+    { id: 1, x: 8, y: 30, position: "GK" },
+    { id: 2, x: 20, y: 30, position: "CB" },
+    { id: 3, x: 20, y: 18, position: "CB" },
+    { id: 4, x: 20, y: 42, position: "CB" },
+    { id: 5, x: 25, y: 10, position: "LWB" },
+    { id: 6, x: 25, y: 50, position: "RWB" },
+    { id: 7, x: 45, y: 22, position: "LM" },
+    { id: 8, x: 45, y: 38, position: "RM" },
+    { id: 9, x: 40, y: 26, position: "CM" },
+    { id: 10, x: 40, y: 34, position: "CM" },
+    { id: 11, x: 85, y: 30, position: "ST" },
+  ],
+};
 
-function toSvgY(yMeters: number): number {
-  // Pitch width maps to SVG height of 60 units.
-  return ((yMeters + 34) / 68) * 60;
-}
+export function PitchView() {
+  const { data: realtimeData } = useSocket();
+  const [isPortrait, setIsPortrait] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showZones, setShowZones] = useState(false);
+  const [showPlayers, setShowPlayers] = useState(true);
+  const [formation, setFormation] = useState<Formation>("4-3-3");
 
-export function PitchView({ players: livePlayers, ball }: PitchViewProps) {
-  const [isHeatmap, setIsHeatmap] = useState(true);
+  useEffect(() => {
+    const checkOrientation = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    
+    checkOrientation();
+    window.addEventListener("resize", checkOrientation);
+    return () => window.removeEventListener("resize", checkOrientation);
+  }, []);
 
-  // Fallback positions keep the panel useful when live WS data is unavailable.
-  const mockPlayers = [
-    { id: 1, x: 15, y: 50, isDefender: true },
-    { id: 2, x: 20, y: 25, isDefender: true },
-    { id: 3, x: 20, y: 75, isDefender: true },
-    { id: 4, x: 25, y: 40, isDefender: true },
-    { id: 5, x: 25, y: 60, isDefender: true },
-    { id: 6, x: 40, y: 35, isDefender: false },
-    { id: 7, x: 40, y: 65, isDefender: false },
-    { id: 8, x: 55, y: 50, isDefender: false },
-    { id: 9, x: 65, y: 40, isDefender: false },
-    { id: 10, x: 70, y: 55, isDefender: false },
+  // Heatmap points (mock data if not realtime)
+  const heatPoints = [
+    { x: 50, y: 30, r: 15, opacity: 0.3 },
+    { x: 75, y: 15, r: 12, opacity: 0.4 },
+    { x: 75, y: 45, r: 12, opacity: 0.4 },
+    { x: 85, y: 30, r: 10, opacity: 0.5 },
+    { x: 35, y: 30, r: 18, opacity: 0.25 },
   ];
 
-  const players = livePlayers && livePlayers.length > 0
-    ? livePlayers.map((p) => ({
-        id: p.id,
-        x: toSvgX(p.x_m),
-        y: toSvgY(p.y_m),
-        // Team 0 is currently treated as defensive unit in this visualization.
-        isDefender: p.team === 0,
-      }))
-    : mockPlayers;
+  // Map backend metres (origin at centre, -52.5 to 52.5 and -34 to 34)
+  // to frontend SVG units (0 to 100 on X, 0 to 60 on Y)
+  const mapMetresToSvg = (x_m: number, y_m: number) => {
+    const x = ((x_m + 52.5) / 105) * 100;
+    const y = ((y_m + 34) / 68) * 60;
+    return { x, y };
+  };
 
-  const defenders = players.filter((p) => p.isDefender);
+  const getCoords = (x: number, y: number) => {
+    if (isPortrait) {
+      return { cx: y, cy: 100 - x };
+    }
+    return { cx: x, cy: y };
+  };
 
-  const ballPoint = ball
-    ? { x: toSvgX(ball[0]), y: toSvgY(ball[1]) }
-    : null;
-
-  // Sort by angle so the polygon wraps defenders in order instead of crossing itself.
-  const defensePolygon = defenders
-    .sort((a, b) => {
-      const angleA = Math.atan2(a.y - 50, a.x - 20);
-      const angleB = Math.atan2(b.y - 50, b.x - 20);
-      return angleA - angleB;
-    })
-    .map(p => `${p.x}%,${p.y}%`)
-    .join(' ');
+  const viewBox = isPortrait ? "-1 -1 62 102" : "-1 -1 102 62";
+  const aspectClass = isPortrait ? "aspect-[60/100]" : "aspect-[100/60]";
 
   return (
-    <div className="bg-[#1a1a1a] rounded-xl md:rounded-2xl p-4 md:p-6 h-full flex flex-col border border-[#2a2a2a]">
-      <div className="flex items-center justify-between mb-3 md:mb-4 flex-wrap gap-2">
-        <h2 className="text-white text-base md:text-lg font-semibold">Live Pitch View</h2>
-        <div className="flex items-center gap-2 md:gap-3">
-          <Label htmlFor="tracking-mode" className="text-xs md:text-sm text-gray-400 hidden sm:block">
-            Live Tracking
-          </Label>
-          <Switch
-            id="tracking-mode"
-            checked={isHeatmap}
-            onCheckedChange={setIsHeatmap}
-            className="scale-110"
-          />
-          <Label htmlFor="tracking-mode" className="text-xs md:text-sm text-gray-400">
-            Heatmap
-          </Label>
+    <div className="w-full h-full bg-background flex flex-col items-center justify-center p-4 overflow-hidden gap-4">
+      {/* Pitch Controls */}
+      <div className="flex items-center gap-3 bg-card p-2 px-4 rounded-2xl border border-border shadow-lg">
+        {/* View Options */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-primary transition-colors">
+              <Settings2 className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Display</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56 bg-card border-border">
+            <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Tactical Layers</DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuCheckboxItem
+              checked={showPlayers}
+              onCheckedChange={setShowPlayers}
+              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
+            >
+              <Users className="w-3.5 h-3.5 mr-2" />
+              Player Positions
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={showHeatmap}
+              onCheckedChange={setShowHeatmap}
+              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
+            >
+              <Activity className="w-3.5 h-3.5 mr-2" />
+              Heatmap (Match Load)
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={showZones}
+              onCheckedChange={setShowZones}
+              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
+            >
+              <Grid3X3 className="w-3.5 h-3.5 mr-2" />
+              Tactical Zones
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="h-4 w-px bg-border mx-1" />
+
+        {/* Formation Selection (only shown if no realtime data) */}
+        {!realtimeData && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-secondary transition-colors">
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Formation: {formation}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48 bg-card border-border">
+                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Select System</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border" />
+                <DropdownMenuRadioGroup value={formation} onValueChange={(v) => setFormation(v as Formation)}>
+                  <DropdownMenuRadioItem value="4-3-3" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-3-3 Attacking</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="4-4-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-4-2 Classic</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="3-5-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">3-5-2 Wingbacks</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="5-4-1" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">5-4-1 Defensive</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="h-4 w-px bg-border mx-1" />
+          </>
+        )}
+
+        <div className="flex items-center gap-2">
+          {realtimeData && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live</Badge>}
+          {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap</Badge>}
+          {showZones && <Badge className="bg-secondary/10 text-secondary border-secondary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Zones</Badge>}
         </div>
       </div>
 
-      <div className="flex-1 relative bg-[#0a4d2e] rounded-lg md:rounded-xl overflow-hidden border-2 border-[#0B6A41]">
-        {/* Soccer Pitch */}
-        <svg className="w-full h-full" viewBox="0 0 100 60" preserveAspectRatio="none">
-          {/* Pitch markings */}
-          <rect x="0" y="0" width="100" height="60" fill="#0a4d2e" />
-          
-          {/* Center line */}
-          <line x1="50" y1="0" x2="50" y2="60" stroke="#0B6A41" strokeWidth="0.3" />
-          
-          {/* Center circle */}
-          <circle cx="50" cy="30" r="8" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
-          <circle cx="50" cy="30" r="0.5" fill="#0B6A41" />
-          
-          {/* Left penalty area */}
-          <rect x="0" y="18" width="15" height="24" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
-          <rect x="0" y="24" width="5" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
-          
-          {/* Right penalty area */}
-          <rect x="85" y="18" width="15" height="24" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
-          <rect x="95" y="24" width="5" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
-          
-          {/* Goals */}
-          <rect x="0" y="27" width="1" height="6" fill="#0B6A41" />
-          <rect x="99" y="27" width="1" height="6" fill="#0B6A41" />
+      <div className={`relative w-full h-full max-w-5xl max-h-full ${aspectClass} bg-[#072a1b] rounded-3xl border-2 border-[#0B6A41]/30 overflow-hidden flex items-center justify-center transition-all duration-500`}>
+        {/* Pitch Layers */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none p-1.5"
+          viewBox={viewBox}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* Tactical Zones Layer */}
+          {showZones && (
+            <g className="opacity-30">
+              {/* Thirds */}
+              {isPortrait ? (
+                <>
+                  <line x1="0" y1="33.3" x2="60" y2="33.3" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
+                  <line x1="0" y1="66.6" x2="60" y2="66.6" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
+                  {/* Channels/Half-spaces */}
+                  <line x1="12" y1="0" x2="12" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="24" y1="0" x2="24" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="36" y1="0" x2="36" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="48" y1="0" x2="48" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                </>
+              ) : (
+                <>
+                  <line x1="33.3" y1="0" x2="33.3" y2="60" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
+                  <line x1="66.6" y1="0" x2="66.6" y2="60" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
+                  {/* Channels/Half-spaces */}
+                  <line x1="0" y1="12" x2="100" y2="12" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="0" y1="24" x2="100" y2="24" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="0" y1="36" x2="100" y2="36" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                  <line x1="0" y1="48" x2="100" y2="48" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
+                </>
+              )}
+            </g>
+          )}
+
+          {/* Pitch Markings Layer */}
+          <g className="opacity-40">
+            {isPortrait ? (
+              <>
+                <rect x="0" y="0" width="60" height="100" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+                <line x1="0" y1="50" x2="60" y2="50" stroke="#0B6A41" strokeWidth="0.4" />
+                <circle cx="30" cy="50" r="8" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+                <rect x="15" y="84" width="30" height="16" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+                <rect x="15" y="0" width="30" height="16" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+                <rect x="24" y="94" width="12" height="6" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+                <rect x="24" y="0" width="12" height="6" fill="none" stroke="#0B6A41" strokeWidth="0.4" />
+              </>
+            ) : (
+              <>
+                <rect x="0" y="0" width="100" height="60" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+                <line x1="50" y1="0" x2="50" y2="60" stroke="#0B6A41" strokeWidth="0.3" />
+                <circle cx="50" cy="30" r="8" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+                <rect x="0" y="15" width="16" height="30" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+                <rect x="84" y="15" width="16" height="30" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+                <rect x="0" y="24" width="6" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+                <rect x="94" y="24" width="6" height="12" fill="none" stroke="#0B6A41" strokeWidth="0.3" />
+              </>
+            )}
+          </g>
+
+          {/* Heatmap Layer */}
+          {showHeatmap && (
+            <g className="transition-opacity duration-500">
+              {heatPoints.map((point, i) => {
+                const { cx, cy } = getCoords(point.x, point.y);
+                return (
+                  <circle
+                    key={`heat-${i}`}
+                    cx={cx}
+                    cy={cy}
+                    r={point.r}
+                    fill="url(#heatGradient)"
+                    opacity={point.opacity}
+                  />
+                );
+              })}
+              <defs>
+                <radialGradient id="heatGradient">
+                  <stop offset="0%" stopColor="#DBCC52" />
+                  <stop offset="100%" stopColor="#DBCC52" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+            </g>
+          )}
+
+          {/* Ball Layer (Realtime only) */}
+          {realtimeData?.ball && (
+            <g>
+               {(() => {
+                 const mapped = mapMetresToSvg(realtimeData.ball[0], realtimeData.ball[1]);
+                 const { cx, cy } = getCoords(mapped.x, mapped.y);
+                 return (
+                   <circle
+                     cx={cx}
+                     cy={cy}
+                     r="1.2"
+                     fill="#FFF"
+                     stroke="#000"
+                     strokeWidth="0.3"
+                     className="transition-all duration-300 ease-linear"
+                   />
+                 );
+               })()}
+            </g>
+          )}
+
+          {/* Players Layer */}
+          {showPlayers && (
+            <g className="transition-opacity duration-500">
+              {realtimeData ? (
+                // Realtime players from backend
+                realtimeData.players.map((p) => {
+                  const mapped = mapMetresToSvg(p.x_m, p.y_m);
+                  const { cx, cy } = getCoords(mapped.x, mapped.y);
+                  return (
+                    <g key={`player-${p.id}`} className="transition-all duration-300 ease-linear">
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r="1.8"
+                        fill={p.team === 0 ? "#0B6A41" : "#FF1493"}
+                        stroke="#FFF"
+                        strokeWidth="0.3"
+                        className={p.is_sprinting ? "animate-pulse" : ""}
+                      />
+                      <text
+                        x={cx}
+                        y={cy - 3}
+                        textAnchor="middle"
+                        fill="#FFF"
+                        fontSize="1.5"
+                        fontWeight="black"
+                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                      >
+                        {p.id}
+                      </text>
+                    </g>
+                  );
+                })
+              ) : (
+                // Static formation fallback
+                FORMATIONS[formation].map((p) => {
+                  const { cx, cy } = getCoords(p.x, p.y);
+                  return (
+                    <g key={`${formation}-${p.id}`} className="transition-all duration-700 ease-in-out">
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r="1.8"
+                        fill="#0B6A41"
+                        stroke="#000"
+                        strokeWidth="0.2"
+                      />
+                      <text
+                        x={cx}
+                        y={cy - 3}
+                        textAnchor="middle"
+                        fill="#ececec"
+                        fontSize="1.8"
+                        fontWeight="black"
+                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                      >
+                        {p.position}
+                      </text>
+                    </g>
+                  );
+                })
+              )}
+            </g>
+          )}
         </svg>
-
-        {/* Heatmap overlay */}
-        {isHeatmap && (
-          <div className="absolute inset-0">
-            {/* Hot zones on right side */}
-            <div className="absolute top-[15%] right-[5%] w-32 h-32 bg-red-500/30 rounded-full blur-3xl" />
-            <div className="absolute top-[35%] right-[8%] w-40 h-40 bg-orange-500/25 rounded-full blur-3xl" />
-            <div className="absolute top-[55%] right-[6%] w-36 h-36 bg-yellow-500/20 rounded-full blur-3xl" />
-            <div className="absolute top-[25%] right-[15%] w-28 h-28 bg-red-600/25 rounded-full blur-2xl" />
-          </div>
-        )}
-
-        {/* Players and defensive shape */}
-        <div className="absolute inset-0">
-          <svg className="w-full h-full" viewBox="0 0 100 60" preserveAspectRatio="none">
-            {/* Defensive shape polygon */}
-            {!isHeatmap && (
-              <polygon
-                points={defensePolygon}
-                fill="#0B6A41"
-                fillOpacity="0.15"
-                stroke="#0B6A41"
-                strokeWidth="0.4"
-                strokeDasharray="1,1"
-              />
-            )}
-            
-            {/* Player dots */}
-            {players.map(player => (
-              <g key={player.id}>
-                <circle
-                  cx={player.x}
-                  cy={player.y}
-                  r="1.2"
-                  fill={player.isDefender ? '#0B6A41' : '#ffffff'}
-                  stroke="#000"
-                  strokeWidth="0.2"
-                />
-                <circle
-                  cx={player.x}
-                  cy={player.y}
-                  r="2"
-                  fill="none"
-                  stroke={player.isDefender ? '#0B6A41' : '#ffffff'}
-                  strokeWidth="0.15"
-                  opacity="0.5"
-                />
-              </g>
-            ))}
-
-            {ballPoint && (
-              <g>
-                <circle cx={ballPoint.x} cy={ballPoint.y} r="0.9" fill="#FFD700" stroke="#000" strokeWidth="0.2" />
-                <circle cx={ballPoint.x} cy={ballPoint.y} r="1.6" fill="none" stroke="#FFD700" strokeWidth="0.15" opacity="0.7" />
-              </g>
-            )}
-          </svg>
-        </div>
       </div>
     </div>
   );
