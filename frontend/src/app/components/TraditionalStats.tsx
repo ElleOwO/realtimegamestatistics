@@ -5,6 +5,7 @@ import { Target, Zap, Users, Shield, TrendingUp } from 'lucide-react';
 import { useSocket } from './SocketProvider';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
+import { MOCK_PAYLOAD } from '../data/mock';
 
 interface StatRowProps {
   label: string;
@@ -41,41 +42,42 @@ function StatRow({ label, homeValue, awayValue, homePercent, icon }: StatRowProp
 
 export function TraditionalStats() {
   const { data } = useSocket();
+  const d = data ?? MOCK_PAYLOAD;
 
   const stats = [
     { 
       label: 'Expected Goals (xG)', 
-      home: data?.total_xg_team0 ?? 1.84, 
-      away: data?.total_xg_team1 ?? 1.51, 
-      homePercent: data ? (data.total_xg_team0 / (data.total_xg_team0 + data.total_xg_team1 + 0.1)) * 100 : 55, 
+      home: d.total_xg_team0, 
+      away: d.total_xg_team1, 
+      homePercent: (d.total_xg_team0 / (d.total_xg_team0 + d.total_xg_team1 + 0.1)) * 100, 
       icon: <Target className="w-3 h-3 text-primary" /> 
     },
     { 
       label: 'Possession', 
-      home: `${data?.possession.team0_pct ?? 58}%`, 
-      away: `${data?.possession.team1_pct ?? 42}%`, 
-      homePercent: data?.possession.team0_pct ?? 58, 
+      home: `${d.possession.team0_pct}%`, 
+      away: `${d.possession.team1_pct}%`, 
+      homePercent: d.possession.team0_pct, 
       icon: <Users className="w-3 h-3 text-primary" /> 
     },
     { 
         label: 'Defensive Line (m)', 
-        home: data?.defensive_line_height_m?.toFixed(1) ?? '42.5', 
+        home: d.defensive_line_height_m.toFixed(1), 
         away: '-', 
-        homePercent: data ? (data.defensive_line_height_m / 105) * 100 : 40, 
+        homePercent: (d.defensive_line_height_m / 105) * 100, 
         icon: <Shield className="w-3 h-3 text-primary" /> 
     },
     { 
         label: 'Attack Width (m)', 
-        home: data?.width_of_attack_m?.toFixed(1) ?? '38.2', 
+        home: d.width_of_attack_m.toFixed(1), 
         away: '-', 
-        homePercent: data ? (data.width_of_attack_m / 68) * 100 : 56, 
+        homePercent: (d.width_of_attack_m / 68) * 100, 
         icon: <TrendingUp className="w-3 h-3 text-primary" /> 
     },
     { 
         label: 'Transition Speed (s)', 
-        home: data?.transition_speed_s?.toFixed(1) ?? '4.2', 
+        home: d.transition_speed_s.toFixed(1), 
         away: '-', 
-        homePercent: data ? (1 - data.transition_speed_s / 15) * 100 : 70, 
+        homePercent: (1 - d.transition_speed_s / 15) * 100, 
         icon: <Zap className="w-3 h-3 text-primary" /> 
     },
   ];
@@ -87,6 +89,7 @@ export function TraditionalStats() {
           <div className="flex items-center gap-2 mb-1">
             <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">Match Stats</CardTitle>
             {data && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live Feed</Badge>}
+            {!data && <Badge variant="outline" className="border-border text-muted-foreground font-black uppercase text-[9px]">Mock Data</Badge>}
           </div>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
             {data?.possession.team0_name ?? "Home"} vs {data?.possession.team1_name ?? "Away"}

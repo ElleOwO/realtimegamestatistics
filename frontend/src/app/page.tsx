@@ -14,7 +14,7 @@ export default function LiveDashboard() {
   return (
     <div className="w-full h-full flex flex-col font-sans gap-3">
       {/* Pitch + Scoreboard overlay */}
-      <div className="flex-1 min-h-0 relative rounded-3xl overflow-hidden border border-border shadow-2xl bg-zinc-950/50">
+      <div className="flex-1 min-h-0 relative overflow-hidden ">
         <PitchView
           showPlayers={showPlayers}
           showHeatmap={showHeatmap}

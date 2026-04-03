@@ -7,6 +7,7 @@ export interface Player {
   team: number;
   x_m: number;
   y_m: number;
+  position?: string;
   distance_km?: number;
   top_speed_ms?: number;
   top_speed_kmh?: number;

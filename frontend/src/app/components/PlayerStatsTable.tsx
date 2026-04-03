@@ -6,6 +6,7 @@ import { Badge } from "./ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "./ui/table";
 import { ScrollArea } from "./ui/scroll-area";
 import { useSocket } from "./SocketProvider";
+import { MOCK_PAYLOAD } from "../data/mock";
 import { ArrowUpDown, ArrowUp, ArrowDown, Users } from "lucide-react";
 
 type SortKey = "id" | "distance_km" | "top_speed_kmh" | "sprint_count" | "sprint_distance_km" | "pass_accuracy" | "total_xg" | "time_in_attack_zone_s";
@@ -13,6 +14,7 @@ type SortDir = "asc" | "desc";
 
 export function PlayerStatsTable() {
   const { data } = useSocket();
+  const d = data ?? MOCK_PAYLOAD;
   const [teamFilter, setTeamFilter] = useState<"all" | 0 | 1>("all");
   const [sortKey, setSortKey] = useState<SortKey>("distance_km");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -32,8 +34,8 @@ export function PlayerStatsTable() {
   };
 
   const rows = useMemo(() => {
-    if (!data?.players) return [];
-    let filtered = data.players;
+    if (!d?.players) return [];
+    let filtered = d.players;
     if (teamFilter !== "all") {
       filtered = filtered.filter((p) => p.team === teamFilter);
     }
@@ -42,10 +44,10 @@ export function PlayerStatsTable() {
       const bVal = b[sortKey] ?? 0;
       return sortDir === "asc" ? aVal - bVal : bVal - aVal;
     });
-  }, [data?.players, teamFilter, sortKey, sortDir]);
+  }, [d?.players, teamFilter, sortKey, sortDir]);
 
-  const team0Name = data?.possession.team0_name ?? "Home";
-  const team1Name = data?.possession.team1_name ?? "Away";
+  const team0Name = d.possession.team0_name;
+  const team1Name = d.possession.team1_name;
 
   return (
     <Card className="h-full border-border bg-card overflow-hidden flex flex-col">
@@ -54,6 +56,7 @@ export function PlayerStatsTable() {
           <div className="flex items-center gap-2 mb-1">
             <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">Player Stats</CardTitle>
             {data && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live Feed</Badge>}
+            {!data && <Badge variant="outline" className="border-border text-muted-foreground font-black uppercase text-[9px]">Mock Data</Badge>}
           </div>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
             Per-Player Match Statistics
@@ -152,7 +155,7 @@ export function PlayerStatsTable() {
               </TableHeader>
               <TableBody>
                 {rows.map((player) => (
-                  <TableRow key={player.id}>
+                  <TableRow key={`t${player.team}-p${player.id}`}>
                     <TableCell className="font-mono text-xs font-black">{player.id}</TableCell>
                     <TableCell>
                       <span className={`text-[10px] font-black uppercase tracking-widest ${player.team === 0 ? "text-primary" : "text-secondary"}`}>

@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Trophy, AlertCircle, PlayCircle, Clock, ArrowDownUp } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { useSocket } from './SocketProvider';
+import { MOCK_PAYLOAD } from '../data/mock';
 
 interface MatchEvent {
   minute: number;
@@ -17,10 +18,11 @@ interface MatchEvent {
 
 export function MatchTimeline() {
   const { data } = useSocket();
+  const d = data ?? MOCK_PAYLOAD;
 
   const events: MatchEvent[] = (() => {
-    if (data?.key_events && data.key_events.length > 0) {
-      return data.key_events.map((event: any) => ({
+    if (d.key_events && d.key_events.length > 0) {
+      return d.key_events.map((event: any) => ({
         minute: event.minute ?? 0,
         type: event.type ?? 'chance',
         team: event.team === 0 ? 'home' : 'away',
@@ -32,7 +34,7 @@ export function MatchTimeline() {
     return [];
   })();
 
-  const matchClock = data?.match_clock ?? 0;
+  const matchClock = d.match_clock ?? 0;
   const minutes = Math.floor(matchClock / 60);
   const seconds = Math.floor(matchClock % 60);
   const clockDisplay = `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -58,7 +60,7 @@ export function MatchTimeline() {
         </div>
         {data
           ? <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">{clockDisplay} ELAPSED</Badge>
-          : <Badge variant="outline" className="border-border text-muted-foreground font-black uppercase text-[9px]">Awaiting Data</Badge>
+          : <Badge variant="outline" className="border-border text-muted-foreground font-black uppercase text-[9px]">Mock Data</Badge>
         }
       </CardHeader>
 
