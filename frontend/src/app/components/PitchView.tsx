@@ -1,22 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Activity, Grid3X3, Users, Settings2, LayoutGrid, Target } from "lucide-react";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+import { useState, useEffect, useMemo } from "react";
 import { useSocket } from "./SocketProvider";
 
-type Formation = "4-3-3" | "4-4-2" | "3-5-2" | "5-4-1";
+interface PitchViewProps {
+  showPlayers: boolean;
+  showHeatmap: boolean;
+  showZones: boolean;
+  showPassing: boolean;
+  showBall: boolean;
+}
 
 interface PlayerPos {
   id: number;
@@ -24,6 +17,8 @@ interface PlayerPos {
   y: number;
   position: string;
 }
+
+type Formation = "4-3-3" | "4-4-2" | "3-5-2" | "5-4-1";
 
 const FORMATIONS: Record<Formation, PlayerPos[]> = {
   "4-3-3": [
@@ -81,35 +76,19 @@ const FORMATIONS: Record<Formation, PlayerPos[]> = {
   ],
 };
 
-export function PitchView() {
+export function PitchView({ showPlayers, showHeatmap, showZones, showPassing, showBall }: PitchViewProps) {
   const { data: realtimeData } = useSocket();
   const [isPortrait, setIsPortrait] = useState(false);
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showZones, setShowZones] = useState(false);
-  const [showPlayers, setShowPlayers] = useState(true);
-  const [formation, setFormation] = useState<Formation>("4-3-3");
 
   useEffect(() => {
     const checkOrientation = () => {
       setIsPortrait(window.innerHeight > window.innerWidth);
     };
-    
     checkOrientation();
     window.addEventListener("resize", checkOrientation);
     return () => window.removeEventListener("resize", checkOrientation);
   }, []);
 
-  // Heatmap points (mock data if not realtime)
-  const heatPoints = [
-    { x: 50, y: 30, r: 15, opacity: 0.3 },
-    { x: 75, y: 15, r: 12, opacity: 0.4 },
-    { x: 75, y: 45, r: 12, opacity: 0.4 },
-    { x: 85, y: 30, r: 10, opacity: 0.5 },
-    { x: 35, y: 30, r: 18, opacity: 0.25 },
-  ];
-
-  // Map backend metres (origin at centre, -52.5 to 52.5 and -34 to 34)
-  // to frontend SVG units (0 to 100 on X, 0 to 60 on Y)
   const mapMetresToSvg = (x_m: number, y_m: number) => {
     const x = ((x_m + 52.5) / 105) * 100;
     const y = ((y_m + 34) / 68) * 60;
@@ -124,100 +103,80 @@ export function PitchView() {
   };
 
   const viewBox = isPortrait ? "-1 -1 62 102" : "-1 -1 102 62";
-  const aspectClass = isPortrait ? "aspect-[60/100]" : "aspect-[100/60]";
+
+  const heatPoints = useMemo(() => {
+    if (!realtimeData?.heatmaps) {
+      return [
+        { x: 50, y: 30, r: 15, opacity: 0.3 },
+        { x: 75, y: 15, r: 12, opacity: 0.4 },
+        { x: 75, y: 45, r: 12, opacity: 0.4 },
+        { x: 85, y: 30, r: 10, opacity: 0.5 },
+        { x: 35, y: 30, r: 18, opacity: 0.25 },
+      ];
+    }
+    const points: { x: number; y: number; r: number; opacity: number }[] = [];
+    const team0 = realtimeData.heatmaps.team0;
+    if (team0) {
+      for (let row = 0; row < team0.length; row++) {
+        for (let col = 0; col < team0[row].length; col++) {
+          if (team0[row][col] > 0) {
+            const x = (col / team0[row].length) * 100;
+            const y = (row / team0.length) * 60;
+            const intensity = Math.min(team0[row][col] / 100, 1);
+            points.push({ x, y, r: 3 + intensity * 8, opacity: intensity * 0.6 });
+          }
+        }
+      }
+    }
+    return points;
+  }, [realtimeData?.heatmaps]);
+
+  const passingLines = useMemo(() => {
+    if (!realtimeData?.players) return [];
+    const team0Players = realtimeData.players.filter((p) => p.team === 0);
+    const team1Players = realtimeData.players.filter((p) => p.team === 1);
+    const lines: { x1: number; y1: number; x2: number; y2: number; team: number; strength: number }[] = [];
+
+    const addLines = (players: typeof realtimeData.players) => {
+      for (let i = 0; i < players.length; i++) {
+        for (let j = i + 1; j < players.length; j++) {
+          const p1 = players[i];
+          const p2 = players[j];
+          const dist = Math.sqrt(Math.pow(p1.x_m - p2.x_m, 2) + Math.pow(p1.y_m - p2.y_m, 2));
+          if (dist < 25) {
+            const strength = Math.max(0, 1 - dist / 25);
+            lines.push({
+              x1: p1.x_m,
+              y1: p1.y_m,
+              x2: p2.x_m,
+              y2: p2.y_m,
+              team: p1.team,
+              strength,
+            });
+          }
+        }
+      }
+    };
+
+    addLines(team0Players);
+    addLines(team1Players);
+    return lines;
+  }, [realtimeData?.players]);
 
   return (
-    <div className="w-full h-full bg-background flex flex-col items-center justify-center p-4 overflow-hidden gap-4">
-      {/* Pitch Controls */}
-      <div className="flex items-center gap-3 bg-card p-2 px-4 rounded-2xl border border-border shadow-lg">
-        {/* View Options */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-primary transition-colors">
-              <Settings2 className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Display</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 bg-card border-border">
-            <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Tactical Layers</DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-border" />
-            <DropdownMenuCheckboxItem
-              checked={showPlayers}
-              onCheckedChange={setShowPlayers}
-              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
-            >
-              <Users className="w-3.5 h-3.5 mr-2" />
-              Player Positions
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={showHeatmap}
-              onCheckedChange={setShowHeatmap}
-              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
-            >
-              <Activity className="w-3.5 h-3.5 mr-2" />
-              Heatmap (Match Load)
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={showZones}
-              onCheckedChange={setShowZones}
-              className="text-xs font-bold uppercase tracking-tight focus:bg-primary/10 focus:text-primary"
-            >
-              <Grid3X3 className="w-3.5 h-3.5 mr-2" />
-              Tactical Zones
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <div className="h-4 w-px bg-border mx-1" />
-
-        {/* Formation Selection (only shown if no realtime data) */}
-        {!realtimeData && (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-9 gap-2 text-foreground/80 hover:text-secondary transition-colors">
-                  <LayoutGrid className="w-4 h-4" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Formation: {formation}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48 bg-card border-border">
-                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Select System</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-border" />
-                <DropdownMenuRadioGroup value={formation} onValueChange={(v) => setFormation(v as Formation)}>
-                  <DropdownMenuRadioItem value="4-3-3" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-3-3 Attacking</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="4-4-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">4-4-2 Classic</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="3-5-2" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">3-5-2 Wingbacks</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="5-4-1" className="text-xs font-bold uppercase tracking-tight focus:bg-secondary/10 focus:text-secondary">5-4-1 Defensive</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="h-4 w-px bg-border mx-1" />
-          </>
-        )}
-
-        <div className="flex items-center gap-2">
-          {realtimeData && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">Live</Badge>}
-          {showHeatmap && <Badge className="bg-primary/10 text-primary border-primary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Heatmap</Badge>}
-          {showZones && <Badge className="bg-secondary/10 text-secondary border-secondary/20 text-[8px] font-black h-5 uppercase tracking-tighter">Zones</Badge>}
-        </div>
-      </div>
-
-      <div className={`relative w-full h-full max-w-5xl max-h-full ${aspectClass} bg-[#072a1b] rounded-3xl border-2 border-[#0B6A41]/30 overflow-hidden flex items-center justify-center transition-all duration-500`}>
-        {/* Pitch Layers */}
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none p-1.5"
-          viewBox={viewBox}
-          preserveAspectRatio="xMidYMid meet"
-        >
+    <div className="relative w-full h-full bg-[#072a1b] flex items-center justify-center overflow-hidden">
+      <svg
+        className="w-full h-full"
+        viewBox={viewBox}
+        preserveAspectRatio="xMidYMid meet"
+      >
           {/* Tactical Zones Layer */}
           {showZones && (
             <g className="opacity-30">
-              {/* Thirds */}
               {isPortrait ? (
                 <>
                   <line x1="0" y1="33.3" x2="60" y2="33.3" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
                   <line x1="0" y1="66.6" x2="60" y2="66.6" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
-                  {/* Channels/Half-spaces */}
                   <line x1="12" y1="0" x2="12" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
                   <line x1="24" y1="0" x2="24" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
                   <line x1="36" y1="0" x2="36" y2="100" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
@@ -227,7 +186,6 @@ export function PitchView() {
                 <>
                   <line x1="33.3" y1="0" x2="33.3" y2="60" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
                   <line x1="66.6" y1="0" x2="66.6" y2="60" stroke="#DBCC52" strokeWidth="0.2" strokeDasharray="1 1" />
-                  {/* Channels/Half-spaces */}
                   <line x1="0" y1="12" x2="100" y2="12" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
                   <line x1="0" y1="24" x2="100" y2="24" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
                   <line x1="0" y1="36" x2="100" y2="36" stroke="#DBCC52" strokeWidth="0.1" strokeDasharray="0.5 0.5" />
@@ -287,93 +245,119 @@ export function PitchView() {
             </g>
           )}
 
-          {/* Ball Layer (Realtime only) */}
-          {realtimeData?.ball && (
+          {/* Passing Patterns Layer */}
+          {showPassing && passingLines.length > 0 && (
+            <g className="transition-opacity duration-500">
+              {passingLines.map((line, i) => {
+                const p1 = mapMetresToSvg(line.x1, line.y1);
+                const p2 = mapMetresToSvg(line.x2, line.y2);
+                const { cx: x1, cy: y1 } = getCoords(p1.x, p1.y);
+                const { cx: x2, cy: y2 } = getCoords(p2.x, p2.y);
+                return (
+                  <line
+                    key={`pass-${i}`}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={line.team === 0 ? "#0B6A41" : "#FF1493"}
+                    strokeWidth={0.3 + line.strength * 0.7}
+                    opacity={0.2 + line.strength * 0.5}
+                    strokeDasharray={line.strength > 0.5 ? "none" : "1 0.5"}
+                  />
+                );
+              })}
+            </g>
+          )}
+
+          {/* Ball Layer */}
+          {showBall && realtimeData?.ball && (
             <g>
-               {(() => {
-                 const mapped = mapMetresToSvg(realtimeData.ball[0], realtimeData.ball[1]);
-                 const { cx, cy } = getCoords(mapped.x, mapped.y);
-                 return (
-                   <circle
-                     cx={cx}
-                     cy={cy}
-                     r="1.2"
-                     fill="#FFF"
-                     stroke="#000"
-                     strokeWidth="0.3"
-                     className="transition-all duration-300 ease-linear"
-                   />
-                 );
-               })()}
+              {(() => {
+                const mapped = mapMetresToSvg(realtimeData.ball[0], realtimeData.ball[1]);
+                const { cx, cy } = getCoords(mapped.x, mapped.y);
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r="1.2"
+                    fill="#FFF"
+                    stroke="#000"
+                    strokeWidth="0.3"
+                    className="transition-all duration-300 ease-linear"
+                  />
+                );
+              })()}
             </g>
           )}
 
           {/* Players Layer */}
           {showPlayers && (
             <g className="transition-opacity duration-500">
-              {realtimeData ? (
-                // Realtime players from backend
-                realtimeData.players.map((p) => {
-                  const mapped = mapMetresToSvg(p.x_m, p.y_m);
-                  const { cx, cy } = getCoords(mapped.x, mapped.y);
-                  return (
-                    <g key={`player-${p.id}`} className="transition-all duration-300 ease-linear">
-                      <circle
-                        cx={cx}
-                        cy={cy}
-                        r="1.8"
-                        fill={p.team === 0 ? "#0B6A41" : "#FF1493"}
-                        stroke="#FFF"
-                        strokeWidth="0.3"
-                        className={p.is_sprinting ? "animate-pulse" : ""}
-                      />
-                      <text
-                        x={cx}
-                        y={cy - 3}
-                        textAnchor="middle"
-                        fill="#FFF"
-                        fontSize="1.5"
-                        fontWeight="black"
-                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+              {realtimeData
+                ? realtimeData.players.map((p) => {
+                    const mapped = mapMetresToSvg(p.x_m, p.y_m);
+                    const { cx, cy } = getCoords(mapped.x, mapped.y);
+                    return (
+                      <g
+                        key={`player-${p.id}`}
+                        className="transition-all duration-300 ease-linear"
                       >
-                        {p.id}
-                      </text>
-                    </g>
-                  );
-                })
-              ) : (
-                // Static formation fallback
-                FORMATIONS[formation].map((p) => {
-                  const { cx, cy } = getCoords(p.x, p.y);
-                  return (
-                    <g key={`${formation}-${p.id}`} className="transition-all duration-700 ease-in-out">
-                      <circle
-                        cx={cx}
-                        cy={cy}
-                        r="1.8"
-                        fill="#0B6A41"
-                        stroke="#000"
-                        strokeWidth="0.2"
-                      />
-                      <text
-                        x={cx}
-                        y={cy - 3}
-                        textAnchor="middle"
-                        fill="#ececec"
-                        fontSize="1.8"
-                        fontWeight="black"
-                        className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r="1.8"
+                          fill={p.team === 0 ? "#0B6A41" : "#FF1493"}
+                          stroke="#FFF"
+                          strokeWidth="0.3"
+                          className={p.is_sprinting ? "animate-pulse" : ""}
+                        />
+                        <text
+                          x={cx}
+                          y={cy - 3}
+                          textAnchor="middle"
+                          fill="#FFF"
+                          fontSize="1.5"
+                          fontWeight="black"
+                          className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                        >
+                          {p.id}
+                        </text>
+                      </g>
+                    );
+                  })
+                : FORMATIONS["4-3-3"].map((p) => {
+                    const { cx, cy } = getCoords(p.x, p.y);
+                    return (
+                      <g
+                        key={`formation-${p.id}`}
+                        className="transition-all duration-700 ease-in-out"
                       >
-                        {p.position}
-                      </text>
-                    </g>
-                  );
-                })
-              )}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r="1.8"
+                          fill="#0B6A41"
+                          stroke="#000"
+                          strokeWidth="0.2"
+                        />
+                        <text
+                          x={cx}
+                          y={cy - 3}
+                          textAnchor="middle"
+                          fill="#ececec"
+                          fontSize="1.8"
+                          fontWeight="black"
+                          className="uppercase tracking-tighter opacity-95 select-none font-sans"
+                        >
+                          {p.position}
+                        </text>
+                      </g>
+                    );
+                  })}
             </g>
           )}
         </svg>
-      </div>
     </div>
   );
 }
