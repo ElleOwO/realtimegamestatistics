@@ -15,9 +15,11 @@ export function ClientLayout({
 
   return (
     <SocketProvider>
-      <div className="min-h-screen bg-background text-foreground antialiased font-serif flex flex-col">
+      <div
+        className={`${isOverview ? "h-screen overflow-hidden" : "min-h-screen"} bg-background text-foreground antialiased font-serif flex flex-col`}
+      >
         <Navigation />
-        <main className="flex-1 p-4">{children}</main>
+        <main className={`${isOverview ? "flex-1 min-h-0" : ""} p-4`}>{children}</main>
       </div>
     </SocketProvider>
   );

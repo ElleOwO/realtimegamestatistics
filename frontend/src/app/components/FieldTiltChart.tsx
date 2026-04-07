@@ -2,72 +2,55 @@
 
 import { useMemo } from "react";
 import {
-  ComposedChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
-  Scatter,
-  Area,
   ReferenceLine,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { useSocket } from "./SocketProvider";
 import { Badge } from "./ui/badge";
+import { Compass } from "lucide-react";
 import { MOCK_PAYLOAD } from "../data/mock";
 
-interface XGDataPoint {
+interface FieldTiltPoint {
   minute: number;
   home: number;
   away: number;
-  homeShot?: number;
-  awayShot?: number;
 }
 
-export function XGChart() {
+export function FieldTiltChart() {
   const { data } = useSocket();
   const d = data ?? MOCK_PAYLOAD;
 
-  const { chartData, totalHomeXG, totalAwayXG, shotEvents } = useMemo(() => {
-    if (d.xg_timeline && d.xg_timeline.length > 0) {
-      const points: XGDataPoint[] = d.xg_timeline.map((entry: any) => ({
-        minute: entry.minute ?? 0,
-        home: entry.team0_xg ?? 0,
-        away: entry.team1_xg ?? 0,
-      }));
+  const chartData: FieldTiltPoint[] = useMemo(() => {
+    const t0 = d.zone_stats?.team0;
+    const t1 = d.zone_stats?.team1;
+    if (!t0 || !t1) return [{ minute: 0, home: 50, away: 50 }];
 
-      const last = points[points.length - 1];
-      const totalHomeXG = last?.home ?? 0;
-      const totalAwayXG = last?.away ?? 0;
+    const t0Atk =
+      (t0.attacking_third_count ?? 0) +
+      (t0.Q2_atk_left ?? 0) +
+      (t0.Q4_atk_right ?? 0);
+    const t1Atk =
+      (t1.attacking_third_count ?? 0) +
+      (t1.Q2_atk_left ?? 0) +
+      (t1.Q4_atk_right ?? 0);
+    const total = t0Atk + t1Atk;
+    if (total === 0) return [{ minute: 0, home: 50, away: 50 }];
 
-      const shotMap = new Map<number, { home: number; away: number }>();
-      if (d.key_events) {
-        d.key_events.forEach((event: any) => {
-          if (event.type === "goal" || event.type === "chance") {
-            const min = event.minute ?? 0;
-            const existing = shotMap.get(min) ?? { home: 0, away: 0 };
-            if (event.team === 0) existing.home += event.xg ?? 0.05;
-            else existing.away += event.xg ?? 0.05;
-            shotMap.set(min, existing);
-          }
-        });
-      }
+    const homePct = Math.round((t0Atk / total) * 100);
+    const matchMin = Math.floor(d.match_clock / 60);
 
-      points.forEach((p) => {
-        const shot = shotMap.get(p.minute);
-        if (shot) {
-          if (shot.home > 0) p.homeShot = shot.home;
-          if (shot.away > 0) p.awayShot = shot.away;
-        }
-      });
-
-      return { chartData: points, totalHomeXG, totalAwayXG, shotEvents: shotMap };
-    }
-    return { chartData: [{ minute: 0, home: 0, away: 0 }], totalHomeXG: 0, totalAwayXG: 0, shotEvents: new Map() };
+    return [{ minute: matchMin, home: homePct, away: 100 - homePct }];
   }, [d]);
+
+  const currentVal = chartData[chartData.length - 1];
+  const homePct = currentVal?.home ?? 50;
 
   const team0Name = d.possession.team0_name;
   const team1Name = d.possession.team1_name;
@@ -77,22 +60,22 @@ export function XGChart() {
       <CardHeader className="p-6 border-b border-border flex flex-row items-center justify-between">
         <div>
           <CardTitle className="text-xl font-black uppercase tracking-tight text-foreground italic">
-            xG Momentum
+            Field Tilt
           </CardTitle>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            Cumulative Expected Goals
+            Territorial dominance in attacking third (%)
           </p>
         </div>
-        {d?.xg_timeline && d.xg_timeline.length > 0 ? (
+        {data ? (
           <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[8px] font-black h-5 uppercase tracking-tighter">
-            {data ? "Live Feed" : "Mock Data"}
+            Live Feed
           </Badge>
         ) : (
           <Badge
             variant="outline"
             className="border-border text-muted-foreground font-black uppercase text-[9px]"
           >
-            Awaiting Data
+            Mock Data
           </Badge>
         )}
       </CardHeader>
@@ -100,25 +83,24 @@ export function XGChart() {
       <CardContent className="flex-1 min-h-0 p-6">
         <div className="flex items-center justify-around mb-4">
           <div className="text-center">
-            <div className="text-3xl font-black text-primary">
-              {totalHomeXG.toFixed(2)}
-            </div>
+            <div className="text-3xl font-black text-primary">{homePct}%</div>
             <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-              {team0Name} xG
+              {team0Name}
             </div>
           </div>
+          <Compass className="w-5 h-5 text-muted-foreground opacity-30" />
           <div className="text-center">
             <div className="text-3xl font-black text-secondary">
-              {totalAwayXG.toFixed(2)}
+              {100 - homePct}%
             </div>
             <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-              {team1Name} xG
+              {team1Name}
             </div>
           </div>
         </div>
 
         <ResponsiveContainer width="100%" height="75%">
-          <ComposedChart
+          <AreaChart
             data={chartData}
             margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
           >
@@ -138,6 +120,8 @@ export function XGChart() {
               axisLine={{ stroke: "var(--border)" }}
             />
             <YAxis
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
               stroke="var(--muted-foreground)"
               tick={{
                 fill: "var(--muted-foreground)",
@@ -145,6 +129,13 @@ export function XGChart() {
                 fontWeight: 900,
               }}
               axisLine={{ stroke: "var(--border)" }}
+              tickFormatter={(v) => `${v}%`}
+            />
+            <ReferenceLine
+              y={50}
+              stroke="var(--muted-foreground)"
+              strokeDasharray="4 4"
+              opacity={0.5}
             />
             <Tooltip
               contentStyle={{
@@ -156,55 +147,31 @@ export function XGChart() {
                 fontWeight: 900,
                 textTransform: "uppercase",
               }}
-              formatter={(value: number, name: string) => {
-                if (name === "homeShot" || name === "awayShot")
-                  return [`${value.toFixed(2)} xG`, "Shot"];
-                return [value.toFixed(2), name];
-              }}
-            />
-            <Legend
-              wrapperStyle={{
-                color: "var(--foreground)",
-                fontSize: "11px",
-                fontWeight: 900,
-                textTransform: "uppercase",
-                paddingTop: "20px",
-              }}
-              iconType="circle"
+              formatter={(value: number) => `${value}%`}
             />
             <Area
               type="monotone"
               dataKey="home"
+              stackId="1"
               stroke="var(--primary)"
               fill="var(--primary)"
-              fillOpacity={0.08}
-              strokeWidth={2.5}
-              name={`${team0Name} xG`}
+              fillOpacity={0.2}
+              strokeWidth={2}
+              name={team0Name}
               isAnimationActive={false}
             />
             <Area
               type="monotone"
               dataKey="away"
+              stackId="1"
               stroke="var(--secondary)"
               fill="var(--secondary)"
-              fillOpacity={0.08}
-              strokeWidth={2.5}
-              name={`${team1Name} xG`}
+              fillOpacity={0.2}
+              strokeWidth={2}
+              name={team1Name}
               isAnimationActive={false}
             />
-            <Scatter
-              dataKey="homeShot"
-              fill="var(--primary)"
-              name={`${team0Name} Shots`}
-              isAnimationActive={false}
-            />
-            <Scatter
-              dataKey="awayShot"
-              fill="var(--secondary)"
-              name={`${team1Name} Shots`}
-              isAnimationActive={false}
-            />
-          </ComposedChart>
+          </AreaChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>

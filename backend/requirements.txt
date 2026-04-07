@@ -18,7 +18,7 @@ torchvision
 
 # ── xG Model & Statistical Analysis ──────────────────────────────────────
 xgboost                      # Expected Goals model
-pandas
+pandas>=2.0.0
 scikit-optimize>=0.9.0
 
 # ── Roboflow Models (field detection, team classification) ───────────────
