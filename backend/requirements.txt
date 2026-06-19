@@ -1,53 +1,24 @@
 # ============================================================================
-# USask Soccer Analytics Backend Dependencies
+# RTGS Backend Dependencies
 # ============================================================================
-# CPU/GPU inference, video processing, web server, ML models
+# Minimal set for backend/soccer_analytics.py (webcam monolith):
+#   Roboflow detection + SiGLIP team classification + pitch projection + Voronoi
+#
+# This file intentionally drops the FastAPI/WebSocket/Redis/RTSP/XGBoost/Gemini
+# stack that previously lived here. Re-add packages as the backend is rebuilt.
 
-# ── Computer Vision & ML ──────────────────────────────────────────────────
+# ── Computer Vision ───────────────────────────────────────────────────────
 opencv-python
 numpy
-scipy
-scikit-learn
-
-# ── Object Detection & Tracking ──────────────────────────────────────────
-ultralytics                  # YOLOv8/v11 (includes supervision integration)
 supervision                  # Detection helpers, ByteTrack, annotators
-huggingface-hub              # Download models from HuggingFace Hub
-torch                        # PyTorch (CPU by default; GPU via requirements-gpu.txt)
-torchvision
 
-# ── xG Model & Statistical Analysis ──────────────────────────────────────
-xgboost                      # Expected Goals model
-pandas
-scikit-optimize>=0.9.0
+# ── Roboflow Models (player/field detection, team classification) ─────────
+roboflow                     # Dataset management (also used by merge_and_upload.py)
+inference                    # Roboflow inference server client (get_model)
+sports @ git+https://github.com/roboflow/sports.git
+                             # TeamClassifier, ViewTransformer, SoccerPitchConfiguration
 
-# ── Roboflow Models (field detection, team classification) ───────────────
-roboflow                     # Dataset management
-inference                    # Roboflow inference (CPU; inference-gpu for GPU)
-sports @ git+https://github.com/roboflow/sports.git # Roboflow sports utilities (team classifier, view transformer)
-umap-learn                   # UMAP dimensionality reduction (used in sports.TeamClassifier)
-transformers                 # For SiGLIP embeddings in team classification
-
-# ── Web Server & APIs ────────────────────────────────────────────────────
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-websockets==12.0
-python-multipart==0.0.6
-pydantic==2.7.4             # Explicit FastAPI model support for backend and payload schemas
-
-# ── GCP & Vertex AI ──────────────────────────────────────────────────────
-google-genai                 # Vertex AI Gemini SDK
-google-cloud-aiplatform
-
-# ── Optional: Redis For Multi-Client Pub/Sub ───────────────────────────
-redis==5.0.1
-
-# ── Utilities ────────────────────────────────────────────────────────────
-gdown==4.7.1                    # Download from Google Drive
-tqdm==4.66.1                    # Progress bars
-python-dotenv==1.0.0            # Environment variable management
-more-itertools==10.1.0          # Iteration helpers
-
-# ── For GPU Support (optional, uncomment if running on NVIDIA GPU) ──────
-# These are installed separately in the GPU Compute Engine VM.
-# torch-cuda support is handled via the Dockerfile base image.
+# ── Team classifier transitive deps (SiGLIP + UMAP) ───────────────────────
+# sports.TeamClassifier needs these; listed explicitly so they don't go missing.
+transformers                 # SiGLIP embeddings (pulls torch transitively)
+umap-learn                   # Dimensionality reduction in TeamClassifier.fit()
