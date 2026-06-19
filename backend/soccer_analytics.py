@@ -53,6 +53,17 @@ CALIBRATION_STRIDE = 3
 # Homography smoothing window
 MAXLEN = 5
 
+# ── Performance (CPU-friendly defaults; override via env vars) ─────────────
+# Run the expensive detection pipeline every Nth frame; intermediate frames
+# reuse the last detection result (tracker still updates positions). Set 1 to
+# process every frame (slowest, most accurate).
+PROCESS_EVERY = int(os.environ.get("PROCESS_EVERY", "3"))
+# Downscale the frame before inference (e.g. 0.5 = half resolution). 1.0 = no
+# downscale. Lower = faster, less accurate. Output windows stay full-res.
+INFER_SCALE = float(os.environ.get("INFER_SCALE", "0.5"))
+# Detection confidence threshold (higher = fewer detections, faster)
+CONFIDENCE = float(os.environ.get("CONFIDENCE", "0.3"))
+
 
 # LOAD MODELS
 
@@ -215,8 +226,24 @@ def calibrate_team_classifier(cap: cv2.VideoCapture) -> TeamClassifier:
         player_crops = [sv.crop_image(frame, xyxy) for xyxy in players.xyxy]
         crops += player_crops
 
+        # Live preview during calibration so you can see what the camera sees
+        # and whether players (green boxes) are being detected.
+        preview = frame.copy()
+        if len(players) > 0:
+            sv.BoxAnnotator(color=sv.Color.from_hex('#00FF00')).annotate(
+                scene=preview, detections=players)
+        cv2.putText(preview, f"frame {frame_count}/{CALIBRATION_FRAMES}  "
+                    f"crops {len(crops)}/{MIN_CROPS}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.imshow("Calibration (press Q to finish early)", preview)
+
         if frame_count % 30 == 0:
             print(f"   … frame {frame_count}, {len(crops)} crops so far")
+
+        # Allow skipping calibration early once enough crops are collected
+        if (cv2.waitKey(1) & 0xFF == ord("q")) or len(crops) >= MIN_CROPS * 2:
+            print(f"   ⏩ Finishing calibration early ({len(crops)} crops)")
+            break
 
     # UMAP needs enough samples; pad by duplicating existing crops if short
     if len(crops) < MIN_CROPS:
@@ -275,16 +302,43 @@ def main():
     # Homography smoothing
     M_buffer = deque(maxlen=MAXLEN)
 
-    print(f"\nCamera {cam_id} started. Press Q to quit\n")
+    print(f"\nCamera {cam_id} started. Press Q to quit")
+    print(f"   PROCESS_EVERY={PROCESS_EVERY}  INFER_SCALE={INFER_SCALE}  "
+          f"CONFIDENCE={CONFIDENCE}\n")
+
+    frame_idx = 0
+    cached_annotated = None
+    cached_pitch = None
+    cached_voronoi = None
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        frame_idx += 1
+
+        # Skip frames: redisplay last cached results (no inference runs)
+        if PROCESS_EVERY > 1 and frame_idx % PROCESS_EVERY != 1 and cached_annotated is not None:
+            cv2.imshow("Camera View", cached_annotated)
+            if cached_pitch is not None:
+                cv2.imshow("Pitch Radar", cached_pitch)
+            if cached_voronoi is not None:
+                cv2.imshow("Voronoi", cached_voronoi)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+            continue
+
+        # Downscale frame for inference (faster); display stays full-res
+        if INFER_SCALE != 1.0:
+            infer_frame = cv2.resize(frame, (0, 0), fx=INFER_SCALE, fy=INFER_SCALE)
+        else:
+            infer_frame = frame
 
         # DETECTION
-        result = PLAYER_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
+        result = PLAYER_DETECTION_MODEL.infer(infer_frame, confidence=CONFIDENCE)[0]
         detections = sv.Detections.from_inference(result)
+        if INFER_SCALE != 1.0:
+            detections.xyxy = detections.xyxy / INFER_SCALE  # rescale to full-res
 
         # Ball
         ball_detections = detections[detections.class_id == BALL_ID]
@@ -341,21 +395,23 @@ def main():
 
 
         # FIELD KEYPOINTS + HOMOGRAPHY
-        result_field = FIELD_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
+        result_field = FIELD_DETECTION_MODEL.infer(infer_frame, confidence=CONFIDENCE)[0]
         keypoints = sv.KeyPoints.from_inference(result_field)
 
         if (keypoints.xy is None or len(keypoints.xy) == 0
                 or keypoints.confidence is None):
+            cached_annotated = annotated_frame
             cv2.imshow("Camera View", annotated_frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
             continue
 
         filter_mask = keypoints.confidence[0] > 0.5
-        frame_reference_points = keypoints.xy[0][filter_mask]
+        frame_reference_points = keypoints.xy[0][filter_mask] / INFER_SCALE
         pitch_reference_points = np.array(CONFIG.vertices)[filter_mask]
 
         if len(frame_reference_points) < 4:
+            cached_annotated = annotated_frame
             cv2.imshow("Camera View", annotated_frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -378,6 +434,7 @@ def main():
         ])
 
         if len(pitch_detections) == 0 and len(ball_detections) == 0:
+            cached_annotated = annotated_frame
             cv2.imshow("Camera View", annotated_frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -451,6 +508,7 @@ def main():
 
 
         # VORONOI (smooth blend)
+        voronoi_img = None
         if (len(pitch_players_xy) > 0 and len(pitch_detections) > 0):
             team0_mask = pitch_detections.class_id == 0
             team1_mask = pitch_detections.class_id == 1
@@ -498,9 +556,14 @@ def main():
                 cv2.imshow("Voronoi", voronoi_img)
 
 
-        # SHOW WINDOWS
+        # SHOW WINDOWS + cache for skip-frames
+        cached_annotated = annotated_frame
+        cached_pitch = pitch_img
+        cached_voronoi = voronoi_img
         cv2.imshow("Camera View", annotated_frame)
         cv2.imshow("Pitch Radar", pitch_img)
+        if voronoi_img is not None:
+            cv2.imshow("Voronoi", voronoi_img)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

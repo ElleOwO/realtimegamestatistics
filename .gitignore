@@ -74,7 +74,5 @@ Thumbs.db
 *.pem
 *.tsbuildinfo
 next-env.d.ts
-CLAUDE.md
 AGENTS.md
-.claude/
-.claudeignore
+.python-version
