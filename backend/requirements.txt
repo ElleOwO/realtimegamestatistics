@@ -11,3 +11,11 @@ umap-learn
 fastapi
 uvicorn[standard]
 python-dotenv
+
+# Optional: needed by train_xg.py (xG model training on StatsBomb open data)
+requests
+pandas
+scikit-learn
+
+# Optional: needed only for --video URL/YouTube input (lazy-imported)
+yt-dlp
