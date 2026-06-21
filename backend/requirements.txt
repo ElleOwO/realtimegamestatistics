@@ -1,26 +1,13 @@
-# ============================================================================
-# RTGS Backend Dependencies
-# ============================================================================
-# Minimal set for backend/soccer_analytics.py (webcam monolith):
-#   Roboflow detection + SiGLIP team classification + pitch projection + Voronoi
-#
-# This file intentionally drops the FastAPI/WebSocket/Redis/RTSP/XGBoost/Gemini
-# stack that previously lived here. Re-add packages as the backend is rebuilt.
-
-# ── Computer Vision ───────────────────────────────────────────────────────
 opencv-python
 numpy
-supervision                  # Detection helpers, ByteTrack, annotators
+supervision
 
-# ── Roboflow Models (player/field detection, team classification) ─────────
-roboflow                     # Dataset management (also used by merge_and_upload.py)
-inference                    # Roboflow inference server client (get_model)
+roboflow
+inference
 sports @ git+https://github.com/roboflow/sports.git
-                             # TeamClassifier, ViewTransformer, SoccerPitchConfiguration
-
-# ── Team classifier transitive deps (SiGLIP + UMAP) ───────────────────────
-# sports.TeamClassifier imports torch directly and uses SiGLIP via transformers.
-# transformers does NOT install torch automatically, so list it explicitly.
-torch                        # Required by sports.common.team (TeamClassifier)
-transformers                 # SiGLIP embeddings for team classification
-umap-learn                   # Dimensionality reduction in TeamClassifier.fit()
+torch
+transformers
+umap-learn
+fastapi
+uvicorn[standard]
+python-dotenv

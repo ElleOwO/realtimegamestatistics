@@ -1,0 +1,57 @@
+services:
+  analytics:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rtgs-analytics
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/video0:/dev/video0
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /etc/localtime:/etc/localtime:ro
+      - roboflow_cache:/root/.cache/roboflow
+    environment:
+      ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY}
+      QT_QPA_PLATFORM: xcb
+      DISPLAY: ${DISPLAY}
+      PROCESS_EVERY: ${PROCESS_EVERY:-3}
+      INFER_SCALE: ${INFER_SCALE:-0.5}
+      CONFIDENCE: ${CONFIDENCE:-0.3}
+      WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
+      PYTHONUNBUFFERED: "1"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - rtgs-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WS_URL: "ws://localhost:8000/ws"
+    container_name: rtgs-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - analytics
+    restart: unless-stopped
+    networks:
+      - rtgs-net
+
+volumes:
+  roboflow_cache:
+    driver: local
+
+networks:
+  rtgs-net:
+    driver: bridge

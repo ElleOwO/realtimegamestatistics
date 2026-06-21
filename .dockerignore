@@ -1,0 +1,45 @@
+# Security — never bake secrets into images
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Python
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+
+# Node / frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Data (too large for build context)
+annotations/
+merged_dataset/
+
+# Docker
+docker-compose.yml
+Dockerfile*
+.dockerignore
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docs
+*.md
+README.md
+AGENTS.md
+CLAUDE.md
+
+# Logs
+*.log
+npm-debug.log*
