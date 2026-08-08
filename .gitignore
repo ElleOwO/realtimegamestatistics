@@ -76,3 +76,6 @@ Thumbs.db
 next-env.d.ts
 AGENTS.md
 .python-version
+
+# Post-game runtime state and media
+data/

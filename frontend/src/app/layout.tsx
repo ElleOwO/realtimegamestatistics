@@ -4,7 +4,7 @@ import '../styles/index.css';
 
 export const metadata: Metadata = {
   title: 'RTGS Coach Dashboard',
-  description: 'Real-time tactical insights and player performance',
+  description: 'USask post-game Veo match analysis',
 };
 
 export default function RootLayout({

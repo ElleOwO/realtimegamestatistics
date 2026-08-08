@@ -6,6 +6,9 @@
     "n_shots": 5011,
     "n_goals": 485,
     "test_auc": 0.8049,
-    "test_logloss": 0.2703
+    "test_logloss": 0.2703,
+    "pitch_length_m": 105.0,
+    "pitch_width_m": 68.0,
+    "feature_version": 2
   }
 }

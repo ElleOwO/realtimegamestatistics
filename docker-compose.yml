@@ -6,20 +6,22 @@ services:
     container_name: rtgs-analytics
     ports:
       - "8000:8000"
-    devices:
-      - /dev/video0:/dev/video0
+    # GPU passthrough: only enable on hosts with an NVIDIA GPU + nvidia-container-toolkit.
+    # On CPU-only hosts this fails with "failed to discover GPU vendor from CDI".
+    # gpus: all
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
       - /etc/localtime:/etc/localtime:ro
+      - ./data:/data
       - roboflow_cache:/root/.cache/roboflow
     environment:
       ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY}
-      QT_QPA_PLATFORM: xcb
-      DISPLAY: ${DISPLAY}
-      PROCESS_EVERY: ${PROCESS_EVERY:-3}
-      INFER_SCALE: ${INFER_SCALE:-0.5}
+      RTGS_DATA_DIR: /data
+      ANALYSIS_HZ: ${ANALYSIS_HZ:-10}
+      KEYPOINT_HZ: ${KEYPOINT_HZ:-2}
+      RTGS_CORS_ORIGINS: ${RTGS_CORS_ORIGINS:-*}
       CONFIDENCE: ${CONFIDENCE:-0.3}
-      WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
+      # NVIDIA_VISIBLE_DEVICES: all
+      # NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
       PYTHONUNBUFFERED: "1"
     stdin_open: true
     tty: true
@@ -29,7 +31,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 20s
     networks:
       - rtgs-net
 
@@ -38,13 +40,45 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_WS_URL: "ws://localhost:8000/ws"
+        NEXT_PUBLIC_WS_URL: "ws://localhost:8001/ws"
+        NEXT_PUBLIC_API_URL: "http://localhost:8000"
     container_name: rtgs-frontend
     ports:
       - "3000:3000"
     depends_on:
       - analytics
     restart: unless-stopped
+    networks:
+      - rtgs-net
+
+  live-analytics:
+    profiles: ["live"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rtgs-live-analytics
+    command: ["python", "soccer_analytics.py", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    devices:
+      - /dev/video0:/dev/video0
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./data:/data
+      - roboflow_cache:/root/.cache/roboflow
+    environment:
+      ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY}
+      RTGS_DATA_DIR: /data
+      WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
+      PROCESS_EVERY: ${PROCESS_EVERY:-3}
+      INFER_SCALE: ${INFER_SCALE:-0.5}
+      CONFIDENCE: ${CONFIDENCE:-0.3}
+      QT_QPA_PLATFORM: xcb
+      DISPLAY: ${DISPLAY:-:0}
+      PYTHONUNBUFFERED: "1"
+    stdin_open: true
+    tty: true
     networks:
       - rtgs-net
 

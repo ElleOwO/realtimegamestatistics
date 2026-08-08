@@ -1,88 +1,56 @@
 "use client";
 
-import { PitchView } from "./components/PitchView";
-import { useState } from "react";
-import { Users, Activity, Grid3X3, GitBranch, Target } from "lucide-react";
+import { useSocket } from "./components/SocketProvider";
+import { useDerivedMetrics } from "./hooks/useDerivedMetrics";
+import { GameStateBar } from "./components/live/GameStateBar";
+import { ChanceQualityPanel } from "./components/live/ChanceQualityPanel";
+import { ProgressionPanel } from "./components/live/ProgressionPanel";
+import { TeamShapePanel } from "./components/live/TeamShapePanel";
+import { TransitionsPanel } from "./components/live/TransitionsPanel";
+import { XgTimelineChart } from "./components/live/XgTimelineChart";
+import { EventsTicker } from "./components/live/EventsTicker";
 
+/**
+ * Live "Match Command" dashboard. Panel set follows the coaching-priority
+ * categories: game state, chance quality, progression, transitions,
+ * team shape, and system confidence. Only payload-backed or client-derivable
+ * metrics are shown live; the rest are explicit pending-backend placeholders.
+ */
 export default function LiveDashboard() {
-  const [showPlayers, setShowPlayers] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [showZones, setShowZones] = useState(false);
-  const [showPassing, setShowPassing] = useState(false);
-  const [showBall, setShowBall] = useState(true);
+  const { data, isConnected, error, sendCommand } = useSocket();
+  const { fps } = useDerivedMetrics(data);
+  const teamNames: [string, string] = data?.match.team_names ?? ["USask", "Opponent"];
 
   return (
-    <div className="w-full h-full flex flex-col font-sans gap-3">
-      {/* Pitch + Scoreboard overlay */}
-      <div className="flex-1 min-h-0 relative overflow-hidden ">
-        <PitchView
-          showPlayers={showPlayers}
-          showHeatmap={showHeatmap}
-          showZones={showZones}
-          showPassing={showPassing}
-          showBall={showBall}
-        />
+    <div className="w-full h-full flex flex-col gap-3">
+      <GameStateBar
+        data={data}
+        isConnected={isConnected}
+        fps={fps}
+        sendCommand={sendCommand}
+      />
+
+      {!data && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {isConnected
+            ? "The backend is running in post-game mode; no live frames are being published."
+            : error || "Live backend unavailable. Demo data is disabled unless NEXT_PUBLIC_DEMO_MODE=true."}
+        </div>
+      )}
+
+      {/* Stat panels: chance quality / progression / shape / transitions */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <ChanceQualityPanel data={data} teamNames={teamNames} sendCommand={sendCommand} />
+        <ProgressionPanel data={data} teamNames={teamNames} />
+        <TeamShapePanel data={data} teamNames={teamNames} sendCommand={sendCommand} />
+        <TransitionsPanel data={data} teamNames={teamNames} />
       </div>
 
-      {/* Control bar below pitch */}
-      <div className="flex items-center justify-center gap-2 p-2 ">
-        <ToggleBtn
-          active={showPlayers}
-          onClick={() => setShowPlayers(!showPlayers)}
-          icon={<Users className="w-3.5 h-3.5" />}
-          label="Players"
-        />
-        <ToggleBtn
-          active={showBall}
-          onClick={() => setShowBall(!showBall)}
-          icon={<Target className="w-3.5 h-3.5" />}
-          label="Ball"
-        />
-        <ToggleBtn
-          active={showHeatmap}
-          onClick={() => setShowHeatmap(!showHeatmap)}
-          icon={<Activity className="w-3.5 h-3.5" />}
-          label="Heatmap"
-        />
-        <ToggleBtn
-          active={showZones}
-          onClick={() => setShowZones(!showZones)}
-          icon={<Grid3X3 className="w-3.5 h-3.5" />}
-          label="Zones"
-        />
-        <ToggleBtn
-          active={showPassing}
-          onClick={() => setShowPassing(!showPassing)}
-          icon={<GitBranch className="w-3.5 h-3.5" />}
-          label="Passing"
-        />
+      {/* Bottom strip: xG race + event feed (fills remaining height) */}
+      <div className="flex-1 min-h-0 grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <XgTimelineChart data={data} teamNames={teamNames} />
+        <EventsTicker data={data} teamNames={teamNames} />
       </div>
     </div>
-  );
-}
-
-function ToggleBtn({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-        active
-          ? "bg-primary/15 text-primary border-primary/30"
-          : "bg-transparent text-muted-foreground border-zinc-800 hover:text-foreground hover:border-zinc-700"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

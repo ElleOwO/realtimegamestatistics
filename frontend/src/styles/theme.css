@@ -16,8 +16,8 @@
   --muted-foreground: #a3a3a3;
   --accent: #DBCC52;
   --accent-foreground: #000000;
-  --destructive: #71717a;
-  --destructive-foreground: #ececec;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
   --border: #424242;
   --input: #424242;
   --input-background: #2f2f2f;
@@ -42,8 +42,8 @@
 }
 
 @theme inline {
-  --font-sans: "Times New Roman", Times, serif;
-  --font-serif: "Times New Roman", Times, serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -95,7 +95,12 @@
   }
 
   body {
-    @apply bg-background text-foreground font-serif antialiased;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Stat readouts: aligned numerals for live-updating scores/metrics */
+  .stat-numerals {
+    font-variant-numeric: tabular-nums;
   }
 
   h1, h2, h3, h4 {

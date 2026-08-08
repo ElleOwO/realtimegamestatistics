@@ -1,3 +1,54 @@
+# RTGS Post-Game Veo Analysis
+
+The primary workstation workflow is now a persistent post-game service. Copy a
+Veo follow-cam MP4 into `data/inbox/`, start the API with
+`python backend/postgame_server.py`, and open `http://localhost:3000/matches`.
+The operator supplies teams, score, period boundaries, attacking directions,
+and confirms the USask kit cluster before the single-GPU worker starts.
+
+Runtime data is kept under `data/` (gitignored): imported source videos,
+preflight images, annotated H.264 proxies, diagnostics, and the WAL-mode SQLite
+database. Reports survive restarts; a job interrupted by a restart can be run
+again from the beginning. No missing metric is represented as a measured zero,
+and mock dashboard values are enabled only with
+`NEXT_PUBLIC_DEMO_MODE=true`.
+
+```bash
+# Backend API and one-job GPU worker (Python 3.11/3.12)
+export ROBOFLOW_API_KEY="..."
+python backend/postgame_server.py
+
+# Frontend
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
+
+# Lightweight backend validation
+pytest -q backend/tests
+```
+
+The original live camera runtime remains available with
+`python backend/soccer_analytics.py`. It publishes the versioned live coaching
+payload on `ws://localhost:8001/ws`; the dashboard can control match phase,
+clock, score, direction, tactical targets, and shot review over the same socket.
+
+The live release reports quality-gated team metrics: provisional/reviewed
+shots and xG with a shot map, true final-third and penalty-area crossings,
+time-weighted possession and field tilt, phase-split team shape, transitions,
+and experimental pressure episodes. Missing observations are reported as
+unavailable instead of measured zeroes.
+
+```bash
+# Live camera or local video (Python 3.11/3.12)
+export QT_QPA_PLATFORM=xcb
+export ROBOFLOW_API_KEY="..."
+python backend/soccer_analytics.py --port 8001
+python backend/soccer_analytics.py --video PATH --port 8001
+
+# Optional Linux camera/X11 Docker profile. Post-game remains on :8000.
+docker compose --profile live up --build
+```
+
 # Annotation Progress Tracker Spreadsheet:
 https://docs.google.com/spreadsheets/d/11xHF4m3nwdMaOhU0I3eYglJJ1yJcFLXcJ8fwwgNiOz0/edit?gid=0#gid=0
 

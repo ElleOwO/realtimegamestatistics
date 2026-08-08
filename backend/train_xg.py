@@ -18,7 +18,6 @@ Usage:
 
 import os
 import json
-import math
 import argparse
 from typing import List, Optional
 
@@ -28,11 +27,9 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, log_loss
+from analytics_core import PITCH_LENGTH_M, PITCH_WIDTH_M, shot_features as canonical_shot_features
 
 # Keep these in sync with soccer_analytics.py
-GOAL_WIDTH = 7.32          # meters
-PITCH_LENGTH_M = 105.0     # meters
-PITCH_WIDTH_M = 68.0       # meters
 
 # StatsBomb pitch coordinate system is 120 x 80
 SB_LENGTH = 120.0
@@ -65,19 +62,7 @@ def shot_features(x_sb: float, y_sb: float) -> Optional[tuple]:
     sx = x_sb / SB_LENGTH * PITCH_LENGTH_M
     sy = y_sb / SB_WIDTH * PITCH_WIDTH_M
 
-    # Shots always attack the goal at x = 120 (=> 105 m) in StatsBomb data
-    gx = PITCH_LENGTH_M
-    gy = PITCH_WIDTH_M / 2.0
-
-    distance = math.hypot(gx - sx, gy - sy)
-
-    post1 = (gx, gy - GOAL_WIDTH / 2.0)
-    post2 = (gx, gy + GOAL_WIDTH / 2.0)
-    a1 = math.atan2(post1[1] - sy, post1[0] - sx)
-    a2 = math.atan2(post2[1] - sy, post2[0] - sx)
-    angle = abs(a2 - a1)
-
-    return distance, angle
+    return canonical_shot_features((sx, sy), "right")
 
 
 def list_match_ids(competition: Optional[int],
@@ -207,6 +192,9 @@ def main():
             "n_goals": int(df["goal"].sum()),
             "test_auc": round(float(auc), 4),
             "test_logloss": round(float(ll), 4),
+            "pitch_length_m": PITCH_LENGTH_M,
+            "pitch_width_m": PITCH_WIDTH_M,
+            "feature_version": 2,
         },
     }
 

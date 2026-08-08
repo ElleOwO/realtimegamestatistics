@@ -1,0 +1,36 @@
+name: Post-game contracts
+
+on:
+  pull_request:
+  push:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/test.yml"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install API test dependencies
+        run: pip install "fastapi>=0.115" "sqlalchemy>=2,<3" "pydantic>=2,<3" "pytest>=8,<9" "httpx>=0.27,<1" python-multipart
+      - name: Test analytics and API workflow
+        run: pytest -q backend/tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+      - name: Build and typecheck
+        working-directory: frontend
+        run: npm test && npm run build

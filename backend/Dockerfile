@@ -3,7 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 libsm6 libice6 git && \
+    libgl1 libglib2.0-0 libsm6 libice6 libx11-6 libxext6 libxrender1 \
+    libxcb1 libxkbcommon-x11-0 git ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -13,4 +14,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "soccer_analytics.py"]
+CMD ["python", "postgame_server.py"]

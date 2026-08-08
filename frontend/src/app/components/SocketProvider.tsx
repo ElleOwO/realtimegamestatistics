@@ -1,21 +1,22 @@
 "use client";
 
 import React, { createContext, useContext, ReactNode } from "react";
-import { useAnalytics, AnalyticsPayload } from "../hooks/useAnalytics";
+import { useAnalytics, AnalyticsPayload, LiveCommand } from "../hooks/useAnalytics";
 
 interface SocketContextType {
   data: AnalyticsPayload | null;
   isConnected: boolean;
   error: string | null;
+  sendCommand: (command: LiveCommand) => boolean;
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export function SocketProvider({ children }: { children: ReactNode }) {
-  const { data, isConnected, error } = useAnalytics();
+  const { data, isConnected, error, sendCommand } = useAnalytics();
 
   return (
-    <SocketContext.Provider value={{ data, isConnected, error }}>
+    <SocketContext.Provider value={{ data, isConnected, error, sendCommand }}>
       {children}
     </SocketContext.Provider>
   );

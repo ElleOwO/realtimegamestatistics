@@ -31,6 +31,15 @@ from sports.common.team import TeamClassifier
 from sports.common.view import ViewTransformer
 from sports.configs.soccer import SoccerPitchConfiguration
 
+from analytics_core import (
+    AnalyticsEngine,
+    FrameObservation,
+    PlayerObservation,
+    PITCH_LENGTH_M,
+    PITCH_WIDTH_M,
+)
+from live_state import LiveMatchController
+
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 CONFIG = SoccerPitchConfiguration()
 
@@ -82,6 +91,12 @@ if os.path.exists(_XG_COEFFS_PATH):
     try:
         with open(_XG_COEFFS_PATH) as _f:
             _loaded = json.load(_f)
+        _meta = _loaded.get("_meta", {})
+        if _meta and (
+            float(_meta.get("pitch_length_m", 105.0)) != 105.0
+            or float(_meta.get("pitch_width_m", 68.0)) != 68.0
+        ):
+            raise ValueError("xG coefficients were trained for a different pitch size")
         XG_COEFFS.update({k: float(_loaded[k]) for k in XG_COEFFS if k in _loaded})
         print(f"✅ Loaded trained xG coefficients from {_XG_COEFFS_PATH}")
     except (ValueError, KeyError, OSError) as _e:
@@ -602,134 +617,65 @@ class ConnectionManager:
 _latest_payload: str = ""
 _new_data = threading.Event()
 connection_manager = ConnectionManager()
+match_controller = LiveMatchController()
+analytics_engine = AnalyticsEngine(XG_COEFFS)
+analytics_lock = threading.RLock()
 
 
-def build_payload(
-    frame_idx: int,
-    match_start: float,
-    tracker_ids: np.ndarray,
-    team_ids: np.ndarray,
-    pitch_player_xy: np.ndarray,
-    pitch_ball_xy: np.ndarray,
-    team_xg: dict,
-    zone_entries: dict,
-    shot_markers: list,
-    fps: float,
+def build_payload_v2(
+    observation: FrameObservation,
+    analytics: dict,
+    match_state: dict,
+    emitted_at: float | None = None,
 ) -> dict:
-    """
-    Assemble the JSON payload that matches the frontend AnalyticsPayload contract.
-
-    Parameters
-    ----------
-    frame_idx : int
-        Current frame number.
-    match_start : float
-        Epoch time when the analytics loop started.
-    tracker_ids : np.ndarray
-        ByteTrack IDs for players + goalkeepers (post-tracker, class_id < 2).
-    team_ids : np.ndarray
-        Team IDs (0 or 1) for the same detections.
-    pitch_player_xy : np.ndarray
-        Pitch-projected positions in centimeters, shape (N, 2).
-    pitch_ball_xy : np.ndarray
-        Ball pitch-projected position in centimeters, shape (1, 2) or empty.
-    team_xg : dict
-        Cumulative xG per team {0: float, 1: float}.
-    zone_entries : dict
-        Zone entry counts per team.
-    shot_markers : list
-        List of shot dicts with 'frame', 'xg', 'position', 'team'.
-    fps : float
-        Video frames per second.
-    """
-    players = []
-    for i in range(len(tracker_ids)):
-        x_m = float(pitch_player_xy[i, 0]) / 100.0 - 60.0
-        y_m = float(pitch_player_xy[i, 1]) / 100.0 - 35.0
-        players.append(
-            {
-                "id": int(tracker_ids[i]),
-                "team": int(team_ids[i]),
-                "x_m": round(x_m, 2),
-                "y_m": round(y_m, 2),
-            }
-        )
-
-    ball = None
-    if len(pitch_ball_xy) > 0:
-        bx = float(pitch_ball_xy[0, 0]) / 100.0 - 60.0
-        by = float(pitch_ball_xy[0, 1]) / 100.0 - 35.0
-        ball = [round(bx, 2), round(by, 2)]
-
-    # Zone stats mapping (2-half/4-lane → frontend third-count keys)
-    zone_stats = {}
-    for team in (0, 1):
-        off_h, def_h = team_halves(team)
-        stats = {
-            "attacking_third_count": int(
-                sum(zone_entries[team][(off_h, lane)] for lane in range(NUM_LANES))
-            ),
-            "defensive_third_count": int(
-                sum(zone_entries[team][(def_h, lane)] for lane in range(NUM_LANES))
-            ),
-            "middle_third_count": 0,
+    """Build the quality-aware, canonical 105 x 68 live contract."""
+    players = [
+        {
+            "id": player.track_id,
+            "team": 0 if player.team == "team0" else 1,
+            "role": player.role,
+            "x_m": round(player.point[0], 2),
+            "y_m": round(player.point[1], 2),
+            "confidence": round(player.confidence, 3),
         }
-        for lane in range(NUM_LANES):
-            stats[f"L{lane}_off"] = int(zone_entries[team][(off_h, lane)])
-            stats[f"L{lane}_def"] = int(zone_entries[team][(def_h, lane)])
-        zone_stats[f"team{team}"] = stats
-
-    # xG timeline (cumulative, matches frontend XGChart shape)
-    timeline = []
-    cum_xg = {0: 0.0, 1: 0.0}
-    for shot in sorted(shot_markers, key=lambda s: s["frame"]):
-        cum_xg[shot["team"]] += shot["xg"]
-        timeline.append(
-            {
-                "minute": round(shot["frame"] / fps / 60.0, 1),
-                "team0_xg": round(cum_xg[0], 3),
-                "team1_xg": round(cum_xg[1], 3),
-            }
-        )
-
-    # Key events (matches frontend key_events shape)
-    events = []
-    for shot in shot_markers:
-        events.append(
-            {
-                "minute": round(shot["frame"] / fps / 60.0, 1),
-                # "chance" so the frontend's XGChart / MatchTimeline render
-                # these events (they only handle "goal" | "chance").
-                "type": "chance",
-                "team": int(shot["team"]),
-                "title": f"Shot (Team {shot['team'] + 1})",
-                "description": f"xG: {shot['xg']:.2f}",
-                "xg": round(float(shot["xg"]), 3),
-            }
-        )
-
+        for player in observation.players
+    ]
+    ball = None
+    if observation.ball is not None:
+        ball = {
+            "x_m": round(observation.ball[0], 2),
+            "y_m": round(observation.ball[1], 2),
+            "confidence": round(float(observation.ball_confidence or 0.0), 3),
+        }
+    detection_values = [player.confidence for player in observation.players]
+    detection_confidence = sum(detection_values) / len(detection_values) if detection_values else None
     return {
-        "frame_id": frame_idx,
-        "timestamp": time.time(),
-        "match_clock": round(time.time() - match_start, 2),
-        "possession": {
-            "team0_pct": 50,
-            "team1_pct": 50,
-            "team0_name": "Team 0",
-            "team1_name": "Team 1",
+        "schema_version": 2,
+        "pitch": {"length_m": PITCH_LENGTH_M, "width_m": PITCH_WIDTH_M},
+        "frame": {
+            "id": observation.frame_id,
+            "source_timestamp_ms": observation.timestamp_ms,
+            "emitted_at_ms": round((emitted_at or time.time()) * 1000),
         },
-        "transition_speed_s": 0.0,
-        "total_xg_team0": round(float(team_xg.get(0, 0.0)), 3),
-        "total_xg_team1": round(float(team_xg.get(1, 0.0)), 3),
-        "defensive_line_height_m": 0.0,
-        "width_of_attack_m": 0.0,
-        "convex_hull_area_m2": 0.0,
-        "players": players,
-        "ball": ball,
-        "zone_stats": zone_stats,
-        "heatmaps": None,
-        "xg_timeline": timeline,
-        "key_events": events,
+        "frame_quality": {
+            "visible_players": len(players),
+            "ball_visible": ball is not None,
+            "detection_confidence": round(detection_confidence, 3) if detection_confidence is not None else None,
+            "ball_confidence": observation.ball_confidence,
+            "calibration_confidence": round(observation.calibration_confidence, 3),
+            "visible_pitch_fraction": round(observation.visible_pitch_fraction, 3),
+            "reprojection_error_m": round(observation.reprojection_error_m, 3) if observation.reprojection_error_m is not None else None,
+            "observation_coverage": round(float(analytics["quality_coverage"]), 3),
+        },
+        "match": match_state,
+        "observations": {"players": players, "ball": ball},
+        "possession": analytics["possession"],
+        "chance_quality": analytics["chance_quality"],
+        "progression": analytics["progression"],
+        "transitions": analytics["transitions"],
+        "shape": analytics["shape"],
+        "pressing": analytics["pressing"],
+        "events": analytics["events"],
     }
 
 
@@ -743,7 +689,7 @@ async def broadcast_loop():
             await connection_manager.broadcast(_latest_payload)
 
 
-def main(video_path: Optional[str] = None):
+def main(video_path: Optional[str] = None, server_port: int = 8001):
     is_url = bool(video_path) and video_path.lower().startswith(("http://", "https://"))
     if video_path:
         if not is_url and not os.path.exists(video_path):
@@ -774,9 +720,9 @@ def main(video_path: Optional[str] = None):
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     app = create_app()
-    print("\n🚀 Server starting on http://0.0.0.0:8000  (WS: /ws, Health: /health)")
+    print(f"\n🚀 Live server starting on http://0.0.0.0:{server_port}  (WS: /ws, Health: /health)")
     server_thread = threading.Thread(
-        target=lambda: uvicorn.run(app, host="0.0.0.0", port=8000), daemon=True
+        target=lambda: uvicorn.run(app, host="0.0.0.0", port=server_port), daemon=True
     )
     server_thread.start()
 
@@ -815,35 +761,25 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
         f"CONFIDENCE={CONFIDENCE}\n"
     )
 
-    # ── xG / zone / interval state ──────────────────────────────────────
-    ball_history = deque(maxlen=BALL_HISTORY_LEN)
-    team_xg = {0: 0.0, 1: 0.0}
-    shot_markers = []
-    last_shot_frame = -SHOT_COOLDOWN_FRAMES
-
-    zone_entries = {0: defaultdict(int), 1: defaultdict(int)}
-    last_team_zone = {0: None, 1: None}
-
     fps = cap.get(cv2.CAP_PROP_FPS)
     fps = fps if fps and fps > 1 else 30.0
-    interval_frames = max(int(INTERVAL_MINUTES * 60 * fps), 1)
-    next_interval = interval_frames
-    interval_idx = 0
-    prev_snapshot = {"xg": {0: 0.0, 1: 0.0}, "entries": {0: 0, 1: 0}}
-    print(f"   Video ~{fps:.1f} fps; coach updates every {INTERVAL_MINUTES} min of match time\n")
+    print(f"   Video ~{fps:.1f} fps; live coaching payload on /ws\n")
 
     match_start = time.time()
+    source_start_monotonic = time.monotonic()
     frame_idx = 0
     cached_annotated = None
     cached_pitch = None
     cached_voronoi = None
-    cached_dashboard = None
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
         frame_idx += 1
+        source_timestamp_ms = round(cap.get(cv2.CAP_PROP_POS_MSEC))
+        if source_timestamp_ms <= 0:
+            source_timestamp_ms = round((time.monotonic() - source_start_monotonic) * 1000)
 
         if (
             PROCESS_EVERY > 1
@@ -855,8 +791,6 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
                 cv2.imshow("Pitch Radar", cached_pitch)
             if cached_voronoi is not None:
                 cv2.imshow("Voronoi", cached_voronoi)
-            if cached_dashboard is not None:
-                cv2.imshow("Coach Dashboard", cached_dashboard)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
             continue
@@ -947,12 +881,41 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
                 break
             continue
 
-        transformer = ViewTransformer(
-            source=frame_reference_points, target=pitch_reference_points
+        transformer = ViewTransformer(source=frame_reference_points, target=pitch_reference_points)
+        robust_m, inlier_mask = cv2.findHomography(
+            frame_reference_points.astype(np.float32),
+            pitch_reference_points.astype(np.float32),
+            cv2.RANSAC,
+            5.0,
         )
-
-        M_buffer.append(transformer.m)
+        if robust_m is not None:
+            transformer.m = robust_m
+        normalized_m = transformer.m / max(abs(transformer.m[2, 2]), 1e-9)
+        M_buffer.append(normalized_m)
         transformer.m = np.mean(np.array(M_buffer), axis=0)
+
+        reprojected = transformer.transform_points(frame_reference_points)
+        reprojection_error_m = float(
+            np.mean(np.linalg.norm(reprojected - pitch_reference_points, axis=1)) / 100.0
+        )
+        visible_pitch_fraction = min(
+            float(
+                cv2.contourArea(cv2.convexHull(frame_reference_points.astype(np.float32)))
+                / max(frame.shape[0] * frame.shape[1], 1)
+            ),
+            1.0,
+        )
+        keypoint_confidence = float(np.mean(keypoints.confidence[0][filter_mask]))
+        inlier_ratio = float(np.mean(inlier_mask)) if inlier_mask is not None else 0.0
+        calibration_confidence = float(
+            max(0.0, min(
+                keypoint_confidence
+                * inlier_ratio
+                * math.exp(-reprojection_error_m / 2.0)
+                * min(visible_pitch_fraction / 0.25, 1.0),
+                1.0,
+            ))
+        )
 
         pitch_detections = sv.Detections.merge(
             [players_detections, goalkeepers_detections]
@@ -990,50 +953,6 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
             else np.array([])
         )
 
-        # ═══════════════════════════════════════════════════════════════════
-        # xG: ball history → shot detection → cumulative team xG
-        # ═══════════════════════════════════════════════════════════════════
-        if len(pitch_ball_xy) > 0:
-            ball_history.append(pitch_ball_xy[0])
-
-            is_shot, vx = detect_shot(ball_history, CONFIG)
-            if is_shot and (frame_idx - last_shot_frame) >= SHOT_COOLDOWN_FRAMES:
-                goal_x = CONFIG.length if vx >= 0 else 0.0
-                bx, by = pitch_ball_xy[0]
-                xg = calculate_xg(bx, by, goal_x, CONFIG)
-                team = nearest_team(pitch_ball_xy[0], pitch_detections)
-                team_xg[team] += xg
-                shot_markers.append({
-                    "frame": frame_idx,
-                    "xg": xg,
-                    "position": pitch_ball_xy[0].copy(),
-                    "team": team,
-                })
-                last_shot_frame = frame_idx
-                print(f"SHOT! Team {team + 1} xG: {xg:.2f} (total {team_xg[team]:.2f})")
-
-        # ═══════════════════════════════════════════════════════════════════
-        # Zone entries (possession-based)
-        # ═══════════════════════════════════════════════════════════════════
-        if len(pitch_ball_xy) > 0 and len(pitch_detections) > 0:
-            poss_team = nearest_team(pitch_ball_xy[0], pitch_detections)
-            zone = ball_zone(pitch_ball_xy[0][0], pitch_ball_xy[0][1], CONFIG)
-            if last_team_zone[poss_team] != zone:
-                zone_entries[poss_team][zone] += 1
-                last_team_zone[poss_team] = zone
-                kind = zone_kind(poss_team, zone[0])
-                print(f"Team {poss_team + 1} entry -> {kind} half, Lane {zone[1] + 1}")
-
-        # ═══════════════════════════════════════════════════════════════════
-        # Coach interval report (every INTERVAL_MINUTES of match/video time)
-        # ═══════════════════════════════════════════════════════════════════
-        if frame_idx >= next_interval:
-            interval_idx += 1
-            print_interval_report(
-                interval_idx, format_clock(frame_idx / fps),
-                team_xg, zone_entries, prev_snapshot)
-            next_interval += interval_frames
-
         payload_mask = merged_detections.class_id < 2
         if payload_mask.any():
             payload_dets = merged_detections[payload_mask]
@@ -1048,17 +967,63 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
             payload_team_ids = np.array([], dtype=int)
             payload_pitch_xy = np.empty((0, 2))
 
-        payload = build_payload(
-            frame_idx=frame_idx,
-            match_start=match_start,
-            tracker_ids=payload_tracker_ids,
-            team_ids=payload_team_ids,
-            pitch_player_xy=payload_pitch_xy,
-            pitch_ball_xy=pitch_ball_xy,
-            team_xg=team_xg,
-            zone_entries=zone_entries,
-            shot_markers=shot_markers,
-            fps=fps,
+        player_observations = []
+        for index, point in enumerate(pitch_players_xy):
+            team_id = int(pitch_detections.class_id[index])
+            if team_id not in (0, 1):
+                continue
+            confidence = (
+                float(pitch_detections.confidence[index])
+                if pitch_detections.confidence is not None
+                else 0.0
+            )
+            tracker_id = (
+                int(payload_tracker_ids[index])
+                if index < len(payload_tracker_ids)
+                else None
+            )
+            player_observations.append(PlayerObservation(
+                team="team0" if team_id == 0 else "team1",
+                point=(
+                    float(point[0]) / CONFIG.length * PITCH_LENGTH_M,
+                    float(point[1]) / CONFIG.width * PITCH_WIDTH_M,
+                ),
+                confidence=confidence,
+                track_id=tracker_id,
+                role="outfield" if index < len(players_detections) else "goalkeeper",
+            ))
+
+        canonical_ball = None
+        ball_confidence = None
+        if len(pitch_ball_xy) > 0:
+            canonical_ball = (
+                float(pitch_ball_xy[0, 0]) / CONFIG.length * PITCH_LENGTH_M,
+                float(pitch_ball_xy[0, 1]) / CONFIG.width * PITCH_WIDTH_M,
+            )
+            if ball_detections.confidence is not None:
+                ball_confidence = float(ball_detections.confidence[0])
+
+        live_match_state = match_controller.snapshot()
+        observation = FrameObservation(
+            frame_id=frame_idx,
+            timestamp_ms=source_timestamp_ms,
+            players=player_observations,
+            ball=canonical_ball,
+            ball_confidence=ball_confidence,
+            calibration_confidence=calibration_confidence,
+            visible_pitch_fraction=visible_pitch_fraction,
+            reprojection_error_m=reprojection_error_m,
+            match_clock_s=float(live_match_state["clock_s"]),
+            period=live_match_state["period"],
+            phase=live_match_state["phase"],
+        )
+        directions = match_controller.directions()
+        with analytics_lock:
+            analytics = analytics_engine.update(observation, directions)
+        payload = build_payload_v2(
+            observation=observation,
+            analytics=analytics,
+            match_state=live_match_state,
         )
         _latest_payload = json.dumps(payload)
         _new_data.set()
@@ -1109,25 +1074,15 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
                 pitch=pitch_img,
             )
 
-        # Zone grid + per-zone entry counts
-        pitch_img = draw_zone_overlay(pitch_img, zone_entries, CONFIG)
-
-        # Recent shot markers on the radar (draw_pitch defaults: scale=0.1, padding=50)
-        for shot in shot_markers:
-            if frame_idx - shot["frame"] < XG_DISPLAY_DURATION:
-                px = int(shot["position"][0] * 0.1) + 50
-                py = int(shot["position"][1] * 0.1) + 50
+        # Reviewed and provisional shot origins from the shared analytics engine.
+        for shot in analytics["chance_quality"]["shots"]:
+            if shot.get("location"):
+                px = int(float(shot["location"][0]) / PITCH_LENGTH_M * CONFIG.length * 0.1) + 50
+                py = int(float(shot["location"][1]) / PITCH_WIDTH_M * CONFIG.width * 0.1) + 50
                 cv2.putText(pitch_img, f"xG {shot['xg']:.2f}",
                             (px + 8, py), cv2.FONT_HERSHEY_SIMPLEX,
                             0.6, (255, 255, 255), 2, cv2.LINE_AA)
                 cv2.circle(pitch_img, (px, py), 8, (0, 0, 255), 2)
-        # NOTE: shot_markers is intentionally NOT pruned here. It is the
-        # source of truth for the cumulative xg_timeline / key_events in
-        # build_payload(); pruning it would make the timeline "drop" over
-        # time while total_xg keeps climbing. The radar draw loop above
-        # already filters by XG_DISPLAY_DURATION, so old markers simply
-        # stop being drawn. Shots are rare (cooldown-gated), so the list
-        # grows slowly and memory is not a concern.
         voronoi_img = None
         if len(pitch_players_xy) > 0 and len(pitch_detections) > 0:
             team0_mask = pitch_detections.class_id == 0
@@ -1177,24 +1132,20 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
 
                 cv2.imshow("Voronoi", voronoi_img)
 
-        # Cumulative xG overlay (camera frame)
-        cv2.putText(annotated_frame, f"Team 1 xG: {team_xg[0]:.2f}",
+        # Cumulative xG overlay from the same data sent to the web dashboard.
+        team_chance = analytics["chance_quality"]["teams"]
+        cv2.putText(annotated_frame, f"Team 1 xG: {team_chance[0]['xg']:.2f}",
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (255, 191, 0), 2, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Team 2 xG: {team_xg[1]:.2f}",
+        cv2.putText(annotated_frame, f"Team 2 xG: {team_chance[1]['xg']:.2f}",
                     (10, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (147, 20, 255), 2, cv2.LINE_AA)
-
-        # Coach dashboard (xG + zone entries)
-        dashboard = draw_dashboard(team_xg, zone_entries, format_clock(frame_idx / fps))
 
         cached_annotated = annotated_frame
         cached_pitch = pitch_img
         cached_voronoi = voronoi_img
-        cached_dashboard = dashboard
         cv2.imshow("Camera View", annotated_frame)
         cv2.imshow("Pitch Radar", pitch_img)
-        cv2.imshow("Coach Dashboard", dashboard)
         if voronoi_img is not None:
             cv2.imshow("Voronoi", voronoi_img)
 
@@ -1204,16 +1155,12 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
     cap.release()
     cv2.destroyAllWindows()
 
-    # Zone-entry summary (possession-based)
-    print("\n=== Ball Entries by Zone (possession-based) ===")
-    print("Lanes 1-4 run across the pitch width (Lane 1 = lowest y).")
-    for team in (0, 1):
-        print(f"\nTeam {team + 1}:")
-        for half in ('L', 'R'):
-            kind = zone_kind(team, half)
-            counts = [zone_entries[team][(half, lane)] for lane in range(NUM_LANES)]
-            lane_str = "  ".join(f"L{lane + 1}:{counts[lane]}" for lane in range(NUM_LANES))
-            print(f"  {kind} half  ({lane_str})")
+    final = analytics_engine.snapshot()
+    print("\n=== Final quality-gated team summary ===")
+    for team, label in enumerate(("Team 1", "Team 2")):
+        chance = final["chance_quality"]["teams"][team]
+        progression = final["progression"]["teams"][team]
+        print(f"{label}: shots {chance['shots']} | xG {chance['xg']:.2f} | final-third entries {progression['final_third_entries']} | box entries {progression['penalty_area_entries']}")
 
 
 def create_app() -> FastAPI:
@@ -1229,7 +1176,48 @@ def create_app() -> FastAPI:
         await connection_manager.connect(ws)
         try:
             while True:
-                await ws.receive_text()
+                raw = await ws.receive_text()
+                command_id = None
+                try:
+                    command = json.loads(raw)
+                    command_id = command.get("command_id")
+                    if command.get("type") == "event.review":
+                        payload = command.get("payload") or {}
+                        with analytics_lock:
+                            existing = next((item for item in analytics_engine.events if item["id"] == str(payload.get("event_id", ""))), None)
+                            previous_goal = bool(existing and existing.get("outcome") == "goal" and existing.get("status") != "rejected")
+                            ok = analytics_engine.review_event(
+                                str(payload.get("event_id", "")),
+                                payload,
+                                match_controller.directions(),
+                            )
+                            updated = next((item for item in analytics_engine.events if item["id"] == str(payload.get("event_id", ""))), None)
+                            current_goal = bool(updated and updated.get("outcome") == "goal" and updated.get("status") != "rejected")
+                        if ok and previous_goal != current_goal and updated and updated.get("team") in ("team0", "team1"):
+                            state = match_controller.snapshot()
+                            score = list(state["score"])
+                            team_index = 0 if updated["team"] == "team0" else 1
+                            score[team_index] = max(0, score[team_index] + (1 if current_goal else -1))
+                            match_controller.apply({"type": "match.set_score", "payload": {"score": score}})
+                        error = None if ok else "event not found"
+                    else:
+                        ok, error, reset_metrics = match_controller.apply(command)
+                        if reset_metrics:
+                            with analytics_lock:
+                                analytics_engine.reset()
+                    await ws.send_text(json.dumps({
+                        "type": "command.ack",
+                        "command_id": command_id,
+                        "ok": ok,
+                        "error": error,
+                    }))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    await ws.send_text(json.dumps({
+                        "type": "command.ack",
+                        "command_id": command_id,
+                        "ok": False,
+                        "error": str(exc),
+                    }))
         except WebSocketDisconnect:
             connection_manager.disconnect(ws)
 
@@ -1247,6 +1235,6 @@ if __name__ == "__main__":
         "--video", type=str, default=None,
         help="Path to a video file OR a URL (including YouTube). "
              "If omitted, a live camera is used.")
+    parser.add_argument("--port", type=int, default=8001, help="Live API/WebSocket port.")
     args = parser.parse_args()
-    main(video_path=args.video)
-
+    main(video_path=args.video, server_port=args.port)
