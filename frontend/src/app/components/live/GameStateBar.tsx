@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Minus, Plus, RotateCcw } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import type { AnalyticsPayload, LiveCommand, MatchPhase } from "../../hooks/useAnalytics";
 import { useNow } from "../../hooks/useDerivedMetrics";
 import { formatClock } from "../../lib/deriveMatchMetrics";
-import { SystemHealthChip } from "./SystemHealthChip";
 
 const PHASES: Array<[MatchPhase, string]> = [
   ["pregame", "Pre"], ["first_half", "1H"], ["halftime", "HT"],
@@ -12,11 +11,9 @@ const PHASES: Array<[MatchPhase, string]> = [
 ];
 
 export function GameStateBar({
-  data, isConnected, fps, sendCommand,
+  data, sendCommand,
 }: {
   data: AnalyticsPayload | null;
-  isConnected: boolean;
-  fps: number | null;
   sendCommand: (command: LiveCommand) => boolean;
 }) {
   const now = useNow(1000);
@@ -24,22 +21,12 @@ export function GameStateBar({
   const elapsedSincePayload = data && state?.clock_running
     ? Math.max(0, now - data.frame.emitted_at_ms) / 1000 : 0;
   const clockS = state ? state.clock_s + elapsedSincePayload : null;
-  const activeHalf = state?.phase === "second_half" ? "second_half" : "first_half";
-  const direction = state?.directions[activeHalf][0] ?? "right";
-  const DirectionIcon = direction === "right" ? ArrowRight : ArrowLeft;
 
   const setScore = (team: 0 | 1, delta: number) => {
     if (!state) return;
     const score: [number, number] = [...state.score];
     score[team] = Math.max(0, score[team] + delta);
     sendCommand({ type: "match.set_score", payload: { score } });
-  };
-
-  const flipDirection = () => {
-    if (!state) return;
-    const first = state.directions.first_half[0] === "right" ? ["left", "right"] : ["right", "left"];
-    const second = [first[1], first[0]];
-    sendCommand({ type: "match.configure", payload: { directions: { first_half: first, second_half: second } } });
   };
 
   const editNames = () => {
@@ -79,14 +66,7 @@ export function GameStateBar({
         ))}
       </div>
 
-      <button onClick={flipDirection} className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-        <DirectionIcon className="h-3.5 w-3.5 text-primary" /> {state?.team_names[0] ?? "USask"} attacks
-      </button>
-
-      <div className="ml-auto flex items-center gap-2">
-        <button onClick={() => sendCommand({ type: "match.reset" })} className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 text-muted-foreground" title="Reset match"><RotateCcw className="h-3.5 w-3.5" /></button>
-        <SystemHealthChip data={data} isConnected={isConnected} fps={fps} />
-      </div>
+      <span className="ml-auto rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-primary">Live match</span>
     </div>
   );
 }

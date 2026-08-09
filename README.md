@@ -44,10 +44,95 @@ export QT_QPA_PLATFORM=xcb
 export ROBOFLOW_API_KEY="..."
 python backend/soccer_analytics.py --port 8001
 python backend/soccer_analytics.py --video PATH --port 8001
+python backend/soccer_analytics.py --stream 'http://PHONE_IP:PORT/VIDEO_PATH' --port 8001
 
-# Optional Linux camera/X11 Docker profile. Post-game remains on :8000.
+# Optional Linux iPhone-stream/X11 Docker profile. Post-game remains on :8000.
+IPHONE_STREAM_URL='rtsp://192.168.1.25:8554/live' \
+  docker compose --profile live up --build
+```
+
+## Live game capture from an iPhone
+
+The iPhone and analytics computer must be on the same network. The native
+iPhone Camera app does not publish a network video URL, so use an iOS camera
+app that exposes either an **RTSP** feed or an **HTTP/MJPEG** feed. Copy the
+complete URL shown by that app and start the live runtime with `--stream`:
+
+```bash
+export QT_QPA_PLATFORM=xcb
+export ROBOFLOW_API_KEY="..."
+python backend/soccer_analytics.py \
+  --stream 'rtsp://192.168.1.25:8554/live' \
+  --port 8001
+```
+
+An HTTP/MJPEG URL works the same way; use the actual video endpoint shown by
+the phone app, not merely its browser control-page address. Keep the iPhone
+plugged in, disable auto-lock, mount it high near midfield in landscape, and
+use the rear wide camera with the whole pitch visible. A dedicated local Wi-Fi
+network is strongly preferable to venue Wi-Fi.
+
+Start the frontend in another terminal:
+
+```bash
+cd frontend
+npm install --legacy-peer-deps
+NEXT_PUBLIC_WS_URL=ws://localhost:8001/ws npm run dev
+```
+
+Then open `http://localhost:3000`. The backend calibrates the two kit clusters
+first and then publishes player/ball positions and derived match analytics to
+the dashboard over WebSocket. If the dashboard is opened on another device,
+replace `localhost` in `NEXT_PUBLIC_WS_URL` with the analytics computer's LAN
+IP and allow TCP port 8001 through its firewall.
+
+Use `--video` for files, YouTube, and other hosted video pages. Use `--stream`
+for a direct iPhone/live-camera feed; this prevents the camera URL from being
+treated as a YouTube-style page by `yt-dlp`.
+
+### Run the iPhone feed with Docker
+
+For DroidCam over USB, the DroidCam Linux client runs on the host and publishes
+the phone camera through its v4l2loopback device. Connect and unlock the iPhone,
+tap **Trust** if prompted, open DroidCam on both devices, select the iPhone in
+the Linux client, and click **Activate**. Confirm the virtual camera path with:
+
+```bash
+v4l2-ctl --list-devices
+```
+
+Create the gitignored `.env` file in the repository root. Do not set
+`IPHONE_STREAM_URL` for USB:
+
+```dotenv
+ROBOFLOW_API_KEY=your_key
+LIVE_VIDEO_DEVICE=/dev/video2
+```
+
+On the Linux analytics computer, permit the live container to open its OpenCV
+preview windows, then start the stack:
+
+```bash
+xhost +local:docker
 docker compose --profile live up --build
 ```
+
+Open `http://localhost:3000`. Compose exposes the live analytics WebSocket on
+`localhost:8001`, which is already baked into the frontend image. Keep the
+DroidCam host client active for the entire match.
+
+Use `docker compose --profile live logs -f live-analytics` to confirm that the
+feed opens and team calibration completes. When finished:
+
+```bash
+docker compose --profile live down
+xhost -local:docker
+```
+
+To use a direct network stream instead, set `IPHONE_STREAM_URL`; it takes
+priority over the video device. If that URL contains a username or password,
+keep it in `.env`; the backend redacts credentials from its own source-status
+messages.
 
 # Annotation Progress Tracker Spreadsheet:
 https://docs.google.com/spreadsheets/d/11xHF4m3nwdMaOhU0I3eYglJJ1yJcFLXcJ8fwwgNiOz0/edit?gid=0#gid=0

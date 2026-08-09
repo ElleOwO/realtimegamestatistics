@@ -5,20 +5,19 @@ import { EmptyState, LiveBadge, Panel } from "./Panel";
 import { StatCompareBar } from "./StatCompareBar";
 
 export function ProgressionPanel({ data, teamNames }: { data: AnalyticsPayload | null; teamNames: [string, string] }) {
-  if (!data) return <Panel title="Progression"><EmptyState /></Panel>;
+  if (!data) return <Panel title="Zonal Entries"><EmptyState /></Panel>;
   const [first, second] = data.progression.teams;
-  if (first.status === "unavailable" && second.status === "unavailable") return <Panel title="Progression"><EmptyState hint="Waiting for controlled possession and a valid projection" /></Panel>;
-  return <Panel title="Progression" badge={<LiveBadge />}>
+  if (first.status === "unavailable" && second.status === "unavailable") return <Panel title="Zonal Entries"><EmptyState hint="Waiting for controlled possession and a valid projection" /></Panel>;
+  return <Panel title="Zonal Entries" badge={<LiveBadge />}>
     <div className="mb-2 flex justify-between text-[9px] font-black uppercase tracking-[0.18em]"><span className="text-primary">{teamNames[0]}</span><span className="text-secondary">{teamNames[1]}</span></div>
     <div className="space-y-3">
       <StatCompareBar label="Final-3rd entries" value0={first.final_third_entries} value1={second.final_third_entries} />
       <StatCompareBar label="Box entries" value0={first.penalty_area_entries} value1={second.penalty_area_entries} />
       <StatCompareBar label="Behind line" value0={first.behind_line_entries} value1={second.behind_line_entries} />
-      <StatCompareBar label="Field tilt" value0={first.field_tilt_pct == null ? "—" : `${first.field_tilt_pct.toFixed(0)}%`} value1={second.field_tilt_pct == null ? "—" : `${second.field_tilt_pct.toFixed(0)}%`} />
       <ChannelBar name={teamNames[0]} stats={first} color="text-primary" />
       <ChannelBar name={teamNames[1]} stats={second} color="text-secondary" />
     </div>
-    <p className="mt-3 text-[9px] text-muted-foreground">Entries require continuous controlled-ball crossings; field tilt excludes unknown possession.</p>
+    <p className="mt-3 text-[9px] text-muted-foreground">Entries count controlled-ball crossings into each attacking zone.</p>
   </Panel>;
 }
 

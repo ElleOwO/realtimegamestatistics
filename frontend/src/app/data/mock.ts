@@ -1,4 +1,4 @@
-import type { AnalyticsPayload, Player, ShapeMetrics } from "../hooks/useAnalytics";
+import type { AnalyticsPayload, Player, ShapeMetrics, ShotEvent } from "../hooks/useAnalytics";
 
 export const MOCK_PLAYERS: Player[] = Array.from({ length: 20 }, (_, index) => ({
   id: index + 1,
@@ -23,6 +23,22 @@ const SHAPE: ShapeMetrics = {
   goalkeeper_line_gap_m: 15.1,
 };
 
+const SHOTS: ShotEvent[] = [
+  { id: "demo-1", type: "shot", timestamp_ms: 420_000, match_clock_s: 420, period: 1, team: "team1", location: [19, 26], status: "confirmed", confidence: 0.79, xg: 0.09, speed_mps: 17.1, box_shot: false, on_target: false, outcome: "off_target", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-2", type: "shot", timestamp_ms: 720_000, match_clock_s: 720, period: 1, team: "team0", location: [91, 30], status: "confirmed", confidence: 0.88, xg: 0.31, speed_mps: 18.4, box_shot: true, on_target: true, outcome: "saved", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-3", type: "shot", timestamp_ms: 1_020_000, match_clock_s: 1020, period: 1, team: "team0", location: [87, 43], status: "confirmed", confidence: 0.82, xg: 0.12, speed_mps: 15.7, box_shot: true, on_target: false, outcome: "blocked", play_context: "open_play", shot_after_regain: true },
+  { id: "demo-4", type: "shot", timestamp_ms: 1_380_000, match_clock_s: 1380, period: 1, team: "team1", location: [24, 37], status: "confirmed", confidence: 0.77, xg: 0.06, speed_mps: 16.2, box_shot: false, on_target: false, outcome: "off_target", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-5", type: "shot", timestamp_ms: 1_740_000, match_clock_s: 1740, period: 1, team: "team0", location: [94, 35], status: "confirmed", confidence: 0.93, xg: 0.48, speed_mps: 20.3, box_shot: true, on_target: true, outcome: "goal", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-6", type: "shot", timestamp_ms: 1_980_000, match_clock_s: 1980, period: 1, team: "team1", location: [18, 40], status: "confirmed", confidence: 0.81, xg: 0.18, speed_mps: 16.8, box_shot: true, on_target: true, outcome: "saved", play_context: "set_piece", shot_after_regain: true },
+  { id: "demo-7", type: "shot", timestamp_ms: 2_340_000, match_clock_s: 2340, period: 1, team: "team0", location: [82, 19], status: "confirmed", confidence: 0.75, xg: 0.05, speed_mps: 14.9, box_shot: false, on_target: false, outcome: "off_target", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-8", type: "shot", timestamp_ms: 2_880_000, match_clock_s: 2880, period: 2, team: "team1", location: [14, 32], status: "confirmed", confidence: 0.84, xg: 0.21, speed_mps: 19.1, box_shot: true, on_target: true, outcome: "saved", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-9", type: "shot", timestamp_ms: 3_060_000, match_clock_s: 3060, period: 2, team: "team0", location: [89, 25], status: "confirmed", confidence: 0.8, xg: 0.14, speed_mps: 17.5, box_shot: true, on_target: false, outcome: "blocked", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-10", type: "shot", timestamp_ms: 3_240_000, match_clock_s: 3240, period: 2, team: "team0", location: [85, 38], status: "confirmed", confidence: 0.78, xg: 0.10, speed_mps: 15.2, box_shot: true, on_target: false, outcome: "off_target", play_context: "set_piece", shot_after_regain: false },
+  { id: "demo-11", type: "shot", timestamp_ms: 3_420_000, match_clock_s: 3420, period: 2, team: "team1", location: [28, 49], status: "confirmed", confidence: 0.73, xg: 0.07, speed_mps: 14.6, box_shot: false, on_target: false, outcome: "off_target", play_context: "open_play", shot_after_regain: false },
+  { id: "demo-12", type: "shot", timestamp_ms: 3_600_000, match_clock_s: 3600, period: 2, team: "team0", location: [96, 40], status: "confirmed", confidence: 0.9, xg: 0.21, speed_mps: 21.2, box_shot: true, on_target: true, outcome: "saved", play_context: "open_play", shot_after_regain: true },
+  { id: "demo-13", type: "shot", timestamp_ms: 3_750_000, match_clock_s: 3750, period: 2, team: "team0", location: [92, 33], status: "candidate", confidence: 0.72, xg: 0.01, speed_mps: 13.8, box_shot: false, on_target: null, outcome: null, play_context: null, shot_after_regain: false },
+];
+
 export const MOCK_PAYLOAD: AnalyticsPayload = {
   schema_version: 2,
   pitch: { length_m: 105, width_m: 68 },
@@ -39,7 +55,7 @@ export const MOCK_PAYLOAD: AnalyticsPayload = {
   },
   match: {
     team_names: ["USask", "Opponent"],
-    score: [1, 0],
+    score: [0, 0],
     phase: "second_half",
     period: 2,
     clock_s: 3780,
@@ -57,17 +73,14 @@ export const MOCK_PAYLOAD: AnalyticsPayload = {
   possession: { state: "team0", team0_pct: 56.2, team1_pct: 43.8, coverage: 0.81 },
   chance_quality: {
     teams: [
-      { status: "experimental", shots: 8, pending_shots: 1, shots_on_target: 4, reviewed_on_target: 7, box_shots: 6, xg: 1.42, open_play_shots: 6, open_play_xg: 1.06, set_piece_shots: 1, set_piece_xg: 0.21 },
-      { status: "experimental", shots: 5, pending_shots: 0, shots_on_target: 2, reviewed_on_target: 5, box_shots: 2, xg: 0.61, open_play_shots: 4, open_play_xg: 0.48, set_piece_shots: 1, set_piece_xg: 0.13 },
+      { status: "experimental", shots: 8, pending_shots: 1, shots_on_target: 3, reviewed_on_target: 7, box_shots: 6, xg: 2.54, open_play_shots: 6, open_play_xg: 2.18, set_piece_shots: 1, set_piece_xg: 0.35 },
+      { status: "experimental", shots: 5, pending_shots: 0, shots_on_target: 2, reviewed_on_target: 5, box_shots: 2, xg: 3.84, open_play_shots: 4, open_play_xg: 3.21, set_piece_shots: 1, set_piece_xg: 0.63 },
     ],
-    shots: [
-      { id: "demo-1", type: "shot", timestamp_ms: 720000, match_clock_s: 720, period: 1, team: "team0", location: [91, 30], status: "confirmed", confidence: 0.8, xg: 0.31, speed_mps: 18, box_shot: true, on_target: true, outcome: "saved", play_context: "open_play", shot_after_regain: false },
-      { id: "demo-2", type: "shot", timestamp_ms: 1980000, match_clock_s: 1980, period: 1, team: "team1", location: [18, 40], status: "confirmed", confidence: 0.75, xg: 0.18, speed_mps: 16, box_shot: true, on_target: false, outcome: "off_target", play_context: "set_piece", shot_after_regain: true },
-    ],
+    shots: SHOTS,
   },
   progression: { teams: [
-    { status: "experimental", final_third_entries: 22, penalty_area_entries: 9, entry_channels: { left: 7, centre: 6, right: 9 }, field_tilt_pct: 61.4, behind_line_entries: 7, line_break_methods: { pass: 4, carry: 2, unknown: 1 } },
-    { status: "experimental", final_third_entries: 14, penalty_area_entries: 4, entry_channels: { left: 5, centre: 5, right: 4 }, field_tilt_pct: 38.6, behind_line_entries: 3, line_break_methods: { pass: 2, carry: 1, unknown: 0 } },
+    { status: "experimental", final_third_entries: 11, penalty_area_entries: 4, entry_channels: { left: 5, centre: 2, right: 0 }, key_area_entries: { wide_left: 5, half_space_left: 0, central: 2, half_space_right: 0, wide_right: 0 }, field_tilt_pct: 61.4, behind_line_entries: 7, line_break_methods: { pass: 4, carry: 2, unknown: 1 } },
+    { status: "experimental", final_third_entries: 27, penalty_area_entries: 11, entry_channels: { left: 4, centre: 8, right: 4 }, key_area_entries: { wide_left: 2, half_space_left: 2, central: 8, half_space_right: 1, wide_right: 3 }, field_tilt_pct: 38.6, behind_line_entries: 3, line_break_methods: { pass: 2, carry: 1, unknown: 0 } },
   ] },
   transitions: { teams: [
     { status: "experimental", high_regains: 6, dangerous_losses: 4, counterattacks: 3, shots_after_regain: 2, opponent_shots_after_loss: 1, average_recovery_s: 8.4 },
@@ -81,5 +94,18 @@ export const MOCK_PAYLOAD: AnalyticsPayload = {
     { attempts: 12, successes: 5, success_pct: 41.7, high_press_attempts: 7, central_escapes: 2, forced_backward: 4, forced_long_candidates: 3, average_escape_s: 4.3, success_by_zone: { left: 2, centre: 2, right: 1 }, opponent_final_third_entries_allowed: 14, status: "experimental" },
     { attempts: 9, successes: 3, success_pct: 33.3, high_press_attempts: 5, central_escapes: 3, forced_backward: 2, forced_long_candidates: 2, average_escape_s: 5.1, success_by_zone: { left: 1, centre: 1, right: 1 }, opponent_final_third_entries_allowed: 22, status: "experimental" },
   ] },
-  events: [],
+  events: [
+    { id: "event-1", type: "high_regain", match_clock_s: 510, team: "team0" },
+    { id: "event-2", type: "shot", match_clock_s: 720, team: "team0", xg: 0.31, status: "confirmed" },
+    { id: "event-3", type: "final_third_entry", match_clock_s: 940, team: "team0" },
+    { id: "event-4", type: "dangerous_loss", match_clock_s: 1320, team: "team0" },
+    { id: "event-5", type: "goal", match_clock_s: 1740, team: "team0", xg: 0.48, status: "confirmed" },
+    { id: "event-6", type: "shot", match_clock_s: 1980, team: "team1", xg: 0.18, status: "confirmed" },
+    { id: "event-7", type: "penalty_area_entry", match_clock_s: 2760, team: "team1" },
+    { id: "event-8", type: "shot", match_clock_s: 2880, team: "team1", xg: 0.21, status: "confirmed" },
+    { id: "event-9", type: "line_break_pass", match_clock_s: 3180, team: "team0" },
+    { id: "event-10", type: "counterattack", match_clock_s: 3510, team: "team0" },
+    { id: "event-11", type: "shot_after_regain", match_clock_s: 3600, team: "team0", xg: 0.21, status: "confirmed" },
+    { id: "event-12", type: "shot", match_clock_s: 3750, team: "team0", xg: 0.01, status: "candidate" },
+  ],
 };

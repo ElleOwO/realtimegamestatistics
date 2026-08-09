@@ -57,11 +57,18 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: rtgs-live-analytics
-    command: ["python", "soccer_analytics.py", "--port", "8001"]
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$IPHONE_STREAM_URL" ]; then
+          exec python soccer_analytics.py --stream "$$IPHONE_STREAM_URL" --port 8001
+        fi
+        exec python soccer_analytics.py --port 8001
     ports:
       - "8001:8001"
     devices:
-      - /dev/video0:/dev/video0
+      - ${LIVE_VIDEO_DEVICE:-/dev/video2}:/dev/video2
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /tmp/.X11-unix:/tmp/.X11-unix
@@ -69,8 +76,9 @@ services:
       - roboflow_cache:/root/.cache/roboflow
     environment:
       ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY}
+      IPHONE_STREAM_URL: ${IPHONE_STREAM_URL:-}
       RTGS_DATA_DIR: /data
-      WEBCAM_INDEX: ${WEBCAM_INDEX:-0}
+      WEBCAM_INDEX: 2
       PROCESS_EVERY: ${PROCESS_EVERY:-3}
       INFER_SCALE: ${INFER_SCALE:-0.5}
       CONFIDENCE: ${CONFIDENCE:-0.3}
@@ -79,6 +87,13 @@ services:
       PYTHONUNBUFFERED: "1"
     stdin_open: true
     tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - rtgs-net
 

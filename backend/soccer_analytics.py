@@ -11,6 +11,7 @@ import threading
 import time
 from collections import deque, defaultdict
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 # Allow unsupported MPS ops to fall back to CPU instead of erroring
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -42,6 +43,7 @@ from live_state import LiveMatchController
 
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 CONFIG = SoccerPitchConfiguration()
+DISPLAY_WINDOWS = os.environ.get("HEADLESS", "").lower() not in {"1", "true", "yes"}
 
 BALL_ID = 0
 GOALKEEPER_ID = 1
@@ -513,6 +515,17 @@ def select_camera() -> int:
 MIN_CROPS = 20
 
 
+def show_window(name: str, image: np.ndarray) -> None:
+    """Display a diagnostic frame unless the runtime is headless."""
+    if DISPLAY_WINDOWS:
+        cv2.imshow(name, image)
+
+
+def quit_requested() -> bool:
+    """Handle the OpenCV Q shortcut when diagnostic windows are enabled."""
+    return DISPLAY_WINDOWS and (cv2.waitKey(1) & 0xFF == ord("q"))
+
+
 def calibrate_team_classifier(cap: cv2.VideoCapture) -> TeamClassifier:
     """
     Read a burst of frames from the webcam, collect player crops,
@@ -557,12 +570,12 @@ def calibrate_team_classifier(cap: cv2.VideoCapture) -> TeamClassifier:
             (0, 255, 255),
             2,
         )
-        cv2.imshow("Calibration (press Q to finish early)", preview)
+        show_window("Calibration (press Q to finish early)", preview)
 
         if frame_count % 30 == 0:
             print(f"   … frame {frame_count}, {len(crops)} crops so far")
 
-        if (cv2.waitKey(1) & 0xFF == ord("q")) or len(crops) >= MIN_CROPS * 2:
+        if quit_requested() or len(crops) >= MIN_CROPS * 2:
             print(f"Finishing calibration early ({len(crops)} crops)")
             break
 
@@ -689,9 +702,41 @@ async def broadcast_loop():
             await connection_manager.broadcast(_latest_payload)
 
 
-def main(video_path: Optional[str] = None, server_port: int = 8001):
+def safe_source_label(stream_url: str) -> str:
+    """Return a log-safe stream URL with any embedded credentials removed."""
+    parsed = urlsplit(stream_url)
+    if not parsed.hostname:
+        return stream_url
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+
+
+def open_live_stream(stream_url: str) -> cv2.VideoCapture:
+    """Open a direct network camera feed without passing it through yt-dlp."""
+    print(f"📱 Connecting to live camera stream: {safe_source_label(stream_url)}")
+    cap = cv2.VideoCapture(stream_url)
+    # Keep latency bounded when the selected OpenCV backend supports this option.
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return cap
+
+
+def main(
+    video_path: Optional[str] = None,
+    server_port: int = 8001,
+    stream_url: Optional[str] = None,
+):
+    if video_path and stream_url:
+        raise ValueError("Choose either video_path or stream_url, not both")
+
     is_url = bool(video_path) and video_path.lower().startswith(("http://", "https://"))
-    if video_path:
+    if stream_url:
+        cap = open_live_stream(stream_url)
+        source_desc = f"live stream '{safe_source_label(stream_url)}'"
+    elif video_path:
         if not is_url and not os.path.exists(video_path):
             print(f"❌ Video file not found: {video_path}")
             return
@@ -712,13 +757,8 @@ def main(video_path: Optional[str] = None, server_port: int = 8001):
         print("❌ Could not open video source")
         return
 
-    team_classifier = calibrate_team_classifier(cap)
-
-    # Rewind local video so calibration frames are not skipped.
-    # (Network/YouTube streams are usually not seekable, so skip the rewind.)
-    if video_path and not is_url:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
+    # Bring up health/WebSocket endpoints before the CPU-heavy calibration.
+    # This lets the dashboard distinguish "backend starting" from unavailable.
     app = create_app()
     print(f"\n🚀 Live server starting on http://0.0.0.0:{server_port}  (WS: /ws, Health: /health)")
     server_thread = threading.Thread(
@@ -726,11 +766,27 @@ def main(video_path: Optional[str] = None, server_port: int = 8001):
     )
     server_thread.start()
 
-    print(f"\n{source_desc} started. Press Q in a CV window to stop.")
-    analytics_loop(cap, team_classifier)
+    team_classifier = calibrate_team_classifier(cap)
+
+    # Rewind local video so calibration frames are not skipped.
+    # (Network/YouTube streams are usually not seekable, so skip the rewind.)
+    if video_path and not is_url:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    stop_hint = "Press Q in a CV window to stop." if DISPLAY_WINDOWS else "Press Ctrl+C to stop."
+    print(f"\n{source_desc} started. {stop_hint}")
+    analytics_loop(
+        cap,
+        team_classifier,
+        tolerate_read_failures=video_path is None or stream_url is not None,
+    )
 
 
-def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
+def analytics_loop(
+    cap: cv2.VideoCapture,
+    team_classifier: TeamClassifier,
+    tolerate_read_failures: bool = False,
+):
     """
     Main detection/tracking/projection loop. Runs on the main thread so OpenCV
     GUI operations (imshow, waitKey) work correctly. Publishes payloads to
@@ -771,11 +827,21 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
     cached_annotated = None
     cached_pitch = None
     cached_voronoi = None
+    failed_reads = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            break
+            if not tolerate_read_failures:
+                break
+            failed_reads += 1
+            if failed_reads == 1 or failed_reads % 30 == 0:
+                print(f"⚠️  Camera frame unavailable; waiting for DroidCam (attempt {failed_reads})")
+            time.sleep(0.25)
+            continue
+        if failed_reads:
+            print("✅ Camera frames resumed")
+            failed_reads = 0
         frame_idx += 1
         source_timestamp_ms = round(cap.get(cv2.CAP_PROP_POS_MSEC))
         if source_timestamp_ms <= 0:
@@ -786,12 +852,12 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
             and frame_idx % PROCESS_EVERY != 1
             and cached_annotated is not None
         ):
-            cv2.imshow("Camera View", cached_annotated)
+            show_window("Camera View", cached_annotated)
             if cached_pitch is not None:
-                cv2.imshow("Pitch Radar", cached_pitch)
+                show_window("Pitch Radar", cached_pitch)
             if cached_voronoi is not None:
-                cv2.imshow("Voronoi", cached_voronoi)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+                show_window("Voronoi", cached_voronoi)
+            if quit_requested():
                 break
             continue
 
@@ -865,8 +931,8 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
             or keypoints.confidence is None
         ):
             cached_annotated = annotated_frame
-            cv2.imshow("Camera View", annotated_frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            show_window("Camera View", annotated_frame)
+            if quit_requested():
                 break
             continue
 
@@ -876,8 +942,8 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
 
         if len(frame_reference_points) < 4:
             cached_annotated = annotated_frame
-            cv2.imshow("Camera View", annotated_frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            show_window("Camera View", annotated_frame)
+            if quit_requested():
                 break
             continue
 
@@ -923,8 +989,8 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
 
         if len(pitch_detections) == 0 and len(ball_detections) == 0:
             cached_annotated = annotated_frame
-            cv2.imshow("Camera View", annotated_frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            show_window("Camera View", annotated_frame)
+            if quit_requested():
                 break
             continue
 
@@ -1130,7 +1196,7 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
                     pitch=voronoi_img,
                 )
 
-                cv2.imshow("Voronoi", voronoi_img)
+                show_window("Voronoi", voronoi_img)
 
         # Cumulative xG overlay from the same data sent to the web dashboard.
         team_chance = analytics["chance_quality"]["teams"]
@@ -1144,16 +1210,17 @@ def analytics_loop(cap: cv2.VideoCapture, team_classifier: TeamClassifier):
         cached_annotated = annotated_frame
         cached_pitch = pitch_img
         cached_voronoi = voronoi_img
-        cv2.imshow("Camera View", annotated_frame)
-        cv2.imshow("Pitch Radar", pitch_img)
+        show_window("Camera View", annotated_frame)
+        show_window("Pitch Radar", pitch_img)
         if voronoi_img is not None:
-            cv2.imshow("Voronoi", voronoi_img)
+            show_window("Voronoi", voronoi_img)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        if quit_requested():
             break
 
     cap.release()
-    cv2.destroyAllWindows()
+    if DISPLAY_WINDOWS:
+        cv2.destroyAllWindows()
 
     final = analytics_engine.snapshot()
     print("\n=== Final quality-gated team summary ===")
@@ -1231,10 +1298,20 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Real-time soccer analytics with Expected Goals (xG).")
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument(
         "--video", type=str, default=None,
         help="Path to a video file OR a URL (including YouTube). "
              "If omitted, a live camera is used.")
+    source_group.add_argument(
+        "--stream", type=str, default=None,
+        help="Direct live-camera URL (for example an iPhone app's RTSP or "
+             "MJPEG/HTTP URL). The URL is passed directly to OpenCV.")
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Run without OpenCV preview windows; analytics still publish to the dashboard.")
     parser.add_argument("--port", type=int, default=8001, help="Live API/WebSocket port.")
     args = parser.parse_args()
-    main(video_path=args.video, server_port=args.port)
+    if args.headless:
+        DISPLAY_WINDOWS = False
+    main(video_path=args.video, stream_url=args.stream, server_port=args.port)

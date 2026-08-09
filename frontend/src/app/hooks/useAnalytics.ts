@@ -77,6 +77,13 @@ export interface TeamProgressionStats {
   final_third_entries: number;
   penalty_area_entries: number;
   entry_channels: { left: number; centre: number; right: number };
+  key_area_entries?: {
+    wide_left: number;
+    half_space_left: number;
+    central: number;
+    half_space_right: number;
+    wide_right: number;
+  };
   field_tilt_pct: number | null;
   behind_line_entries: number;
   line_break_methods: { pass: number; carry: number; unknown: number };
