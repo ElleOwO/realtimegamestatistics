@@ -13,6 +13,8 @@ class Settings:
     keypoint_hz: float = 2.0
     progress_hz: float = 2.0
     cors_origins: tuple[str, ...] = ("*",)
+    mode: str = "live"
+    artifact_policy: str = "compact"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -29,6 +31,8 @@ class Settings:
             analysis_hz=float(os.environ.get("ANALYSIS_HZ", "10")),
             keypoint_hz=float(os.environ.get("KEYPOINT_HZ", "2")),
             progress_hz=float(os.environ.get("PROGRESS_HZ", "2")),
+            mode=os.environ.get("RTGS_MODE", "live").strip().lower(),
+            artifact_policy=os.environ.get("RTGS_ARTIFACT_POLICY", "compact").strip().lower(),
             cors_origins=tuple(
                 origin.strip()
                 for origin in os.environ.get("RTGS_CORS_ORIGINS", "*").split(",")
@@ -45,5 +49,9 @@ class Settings:
         return self.data_root / "matches"
 
     def ensure_directories(self) -> None:
+        if self.mode not in {"live", "test", "replay"}:
+            raise ValueError("RTGS_MODE must be live, test, or replay")
+        if self.artifact_policy not in {"compact", "source", "full"}:
+            raise ValueError("RTGS_ARTIFACT_POLICY must be compact, source, or full")
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
         self.matches_dir.mkdir(parents=True, exist_ok=True)

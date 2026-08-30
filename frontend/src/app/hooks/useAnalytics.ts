@@ -39,6 +39,17 @@ export interface LiveMatchState {
   tactical_targets: TacticalTargets;
 }
 
+export interface LiveRuntimeStatus {
+  run_id: string;
+  mode: "live" | "replay";
+  source_state: "waiting" | "calibrating" | "live" | "stalled" | "reconnecting" | "finished";
+  inference_fps: number;
+  payload_fps: number;
+  processing_latency_ms: number | null;
+  last_frame_age_ms: number | null;
+  reconnect_count: number;
+}
+
 export interface ShotEvent {
   id: string;
   type: "shot";
@@ -117,6 +128,7 @@ export interface AnalyticsPayload {
   schema_version: 2;
   pitch: { length_m: 105; width_m: 68 };
   frame: { id: number; source_timestamp_ms: number; emitted_at_ms: number };
+  runtime: LiveRuntimeStatus;
   frame_quality: {
     visible_players: number;
     ball_visible: boolean;
@@ -183,7 +195,10 @@ export function useAnalytics() {
     let unmounted = false;
 
     const connect = () => {
-      const socket = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws");
+      const fallback = process.env.NODE_ENV === "production"
+        ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`
+        : "ws://localhost:8001/ws";
+      const socket = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || fallback);
       socketRef.current = socket;
       socket.onopen = () => { setIsConnected(true); setError(null); };
       socket.onmessage = (event) => {

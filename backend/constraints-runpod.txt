@@ -1,0 +1,14 @@
+# Versions validated together on the RTGS RunPod RTX 4090 environment.
+# The CUDA-enabled ONNX Runtime wheel is installed separately by the bootstrap
+# script because Roboflow inference declares the CPU package as a dependency.
+# inference 1.2+ currently resolves inference-models/transformers 5, which
+# disables the PyTorch 2.4 supplied by RunPod's CUDA 12.4 template. This is the
+# last inference release before that model-registry dependency split.
+inference==0.49.1
+numpy==2.2.6
+onnxruntime==1.21.1
+opencv-contrib-python==4.10.0.84
+opencv-python==4.10.0.84
+supervision==0.29.0
+transformers==4.55.4
+wheel==0.45.1

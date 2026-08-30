@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "${1:-help}" in
+  dev)
+    shift
+    exec bash "$ROOT_DIR/scripts/local/dev.sh" "$@"
+    ;;
+  test)
+    shift
+    exec bash "$ROOT_DIR/scripts/local/test.sh" "$@"
+    ;;
+  relay)
+    shift
+    action="${1:-doctor}"
+    shift || true
+    case "$action" in
+      deploy) exec bash "$ROOT_DIR/scripts/relay/deploy.sh" "$@" ;;
+      doctor) exec bash "$ROOT_DIR/scripts/relay/doctor.sh" "$@" ;;
+      *) echo "Use './rtgs relay deploy' or './rtgs relay doctor'." >&2; exit 2 ;;
+    esac
+    ;;
+  cloud)
+    shift
+    exec bash "$ROOT_DIR/scripts/cloud/run.sh" "$@"
+    ;;
+  clean)
+    shift
+    exec bash "$ROOT_DIR/scripts/local/clean.sh" "$@"
+    ;;
+  bootstrap)
+    shift
+    exec bash "$ROOT_DIR/scripts/runpod/bootstrap.sh" "$@"
+    ;;
+  help|-h|--help)
+    cat <<'HELP'
+RTGS workflows:
+  ./rtgs dev [--scenario standard]     CPU-only live + post-game replay
+  ./rtgs test                          Backend, frontend, build, and script checks
+  ./rtgs cloud configure               Save private RunPod/relay configuration
+  ./rtgs cloud test --clip FILE        Paid post-game + real RTMPS live smoke
+  ./rtgs cloud live                    Start and monitor a match-day pod
+  ./rtgs cloud cleanup                 Find and terminate orphan RTGS pods
+  ./rtgs relay deploy USER@HOST DOMAIN Install the stable RTMPS relay
+  ./rtgs relay doctor DOMAIN           Test relay publishing and reading
+  ./rtgs clean [--confirm]             Audit or trash legacy caches
+
+Legacy bootstrap/service commands remain available: bootstrap, start, stop,
+restart, status, logs, attach, doctor, and urls.
+HELP
+    ;;
+  *)
+    exec bash "$ROOT_DIR/scripts/runpod/service.sh" "$@"
+    ;;
+esac

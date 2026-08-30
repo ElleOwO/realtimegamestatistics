@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Film, FolderInput, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Film, FolderInput, Loader2, RefreshCw } from "lucide-react";
 import { postgameApi } from "../lib/postgameApi";
 import type { InboxFile, Match } from "../types/postgame";
 
@@ -14,6 +14,8 @@ export default function MatchesPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [testMode, setTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -30,10 +32,24 @@ export default function MatchesPage() {
   }, []);
 
   useEffect(() => {
+    postgameApi.runtime().then((runtime) => setTestMode(runtime.mode !== "live")).catch(() => undefined);
     refresh();
     const timer = window.setInterval(refresh, 5000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  const seedReplay = async () => {
+    setSeeding(true);
+    setError(null);
+    try {
+      await postgameApi.seedScenario();
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Replay fixture failed");
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const importFile = async (filename: string) => {
     setImporting(filename);
@@ -49,38 +65,32 @@ export default function MatchesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 p-2 font-sans md:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-primary">Post-game analysis</p>
-          <h1 className="text-3xl font-black tracking-tight">Match library</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Copy a Veo MP4 into <code className="rounded bg-muted px-1.5 py-0.5">data/inbox</code>, then import and configure it here.
-          </p>
-        </div>
-        <button onClick={refresh} className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-xs font-bold">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
-      </div>
-
+    <div className="app-container app-page app-stack live-shell font-sans">
       {error && (
         <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
           <AlertTriangle className="h-5 w-5" /> {error}. No mock values are being shown.
         </div>
       )}
 
-      <section className="rounded-2xl border border-border bg-card p-6">
-        <div className="mb-5 flex items-center gap-3">
+      <section className="overflow-hidden rounded-xl border border-white/10 bg-card">
+        <div className="flex items-center gap-3 border-b border-white/10 bg-background/30 px-5 py-4 sm:px-6">
           <FolderInput className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-black">Inbox</h2>
-          <span className="rounded-full bg-muted px-2 py-1 text-[10px] font-bold text-muted-foreground">{inbox.length} MP4</span>
+          <h2 className="font-display text-xl font-semibold uppercase tracking-wide">Footage inbox</h2>
+          <div className="ml-auto flex items-center gap-3">
+            {testMode && <button disabled={seeding} onClick={seedReplay} className="rounded-sm bg-secondary px-3 py-2 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-secondary-foreground disabled:opacity-50">{seeding ? "Running…" : "Run replay fixture"}</button>}
+            <span className="hidden font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:inline">{inbox.length} files ready</span>
+            <button onClick={refresh} aria-label="Refresh footage and matches" className="grid h-8 w-8 place-items-center rounded-sm border border-white/10 text-muted-foreground transition hover:border-white/20 hover:text-white">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
+        <div className="p-5 sm:p-6">
         {loading ? (
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         ) : inbox.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No MP4 files are waiting to be imported.</p>
+          <div className="border border-dashed border-white/15 px-6 py-9 text-center"><p className="font-display text-lg font-semibold uppercase tracking-wide text-white">The touchline is clear</p><p className="mt-2 text-sm text-muted-foreground">Copy an MP4 into <code className="bg-background px-1.5 py-0.5 font-mono text-xs text-foreground">data/inbox</code> to prepare a match.</p></div>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-white/10">
             {inbox.map((file) => (
               <div key={file.filename} className="flex flex-wrap items-center justify-between gap-4 py-4">
                 <div className="flex min-w-0 items-center gap-3">
@@ -90,31 +100,33 @@ export default function MatchesPage() {
                     <p className="text-xs text-muted-foreground">{formatBytes(file.size_bytes)} · copied {new Date(file.modified_at).toLocaleString()}</p>
                   </div>
                 </div>
-                <button disabled={Boolean(importing)} onClick={() => importFile(file.filename)} className="rounded-lg bg-primary px-4 py-2 text-xs font-black text-primary-foreground disabled:opacity-50">
+                <button disabled={Boolean(importing)} onClick={() => importFile(file.filename)} className="rounded-sm bg-primary px-4 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-foreground disabled:opacity-50">
                   {importing === file.filename ? "Validating…" : "Import match"}
                 </button>
               </div>
             ))}
           </div>
         )}
+        </div>
       </section>
 
       <section>
-        <h2 className="mb-4 text-lg font-black">Imported matches</h2>
+        <div className="mb-4 flex items-baseline justify-between"><h2 className="font-display text-2xl font-semibold uppercase tracking-wide">Imported matches</h2><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{matches.length} in archive</p></div>
         {matches.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">Import the first match from the inbox above.</div>
+          <div className="rounded-xl border border-dashed border-white/15 p-12 text-center text-sm text-muted-foreground">Import the first match from the footage inbox above.</div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {matches.map((match) => (
-              <Link key={match.id} href={`/matches/${match.id}`} className="group rounded-2xl border border-border bg-card p-5 transition hover:border-primary/50">
-                <div className="mb-5 flex items-start justify-between gap-3">
-                  <Film className="h-7 w-7 text-primary" />
+              <Link key={match.id} href={`/matches/${match.id}`} className="group relative overflow-hidden rounded-xl border border-white/10 bg-card p-5 transition hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-xl hover:shadow-black/15">
+                <span className="absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 bg-primary transition-transform group-hover:scale-x-100" />
+                <div className="mb-8 flex items-start justify-between gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-sm bg-primary/10 text-primary"><Film className="h-5 w-5" /></span>
                   <Status status={match.latest_job?.state || match.status} />
                 </div>
-                <h3 className="truncate text-lg font-black">
+                <h3 className="truncate font-display text-xl font-semibold uppercase tracking-[0.025em]">
                   {match.home_team && match.away_team ? `${match.home_team} vs ${match.away_team}` : match.source_filename}
                 </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-2 font-mono text-[10px] text-muted-foreground">
                   {formatDuration(match.duration_ms)} · {match.source_width}×{match.source_height} · {match.source_codec}
                 </p>
                 {match.latest_job?.state === "running" && (
@@ -123,7 +135,7 @@ export default function MatchesPage() {
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${match.latest_job.progress * 100}%` }} /></div>
                   </div>
                 )}
-                {match.status === "completed" && <p className="mt-5 flex items-center gap-2 text-xs text-primary"><CheckCircle2 className="h-4 w-4" /> Report ready</p>}
+                {match.status === "completed" && <p className="mt-6 flex items-center gap-2 border-t border-white/10 pt-4 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-primary"><CheckCircle2 className="h-4 w-4" /> Report ready <ArrowUpRight className="ml-auto h-4 w-4" /></p>}
               </Link>
             ))}
           </div>

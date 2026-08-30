@@ -1,0 +1,37 @@
+logLevel: info
+logDestinations: [stdout]
+authMethod: internal
+authInternalUsers:
+  - user: __PUBLISH_USER__
+    pass: __PUBLISH_PASSWORD__
+    permissions:
+      - action: publish
+        path: live
+  - user: __READ_USER__
+    pass: __READ_PASSWORD__
+    permissions:
+      - action: read
+        path: live
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+      - action: metrics
+
+rtsp: false
+rtmp: true
+rtmpEncryption: strict
+rtmpsAddress: :1936
+rtmpServerCert: /etc/letsencrypt/live/__RELAY_DOMAIN__/fullchain.pem
+rtmpServerKey: /etc/letsencrypt/live/__RELAY_DOMAIN__/privkey.pem
+srt: false
+hls: false
+webrtc: false
+playback: false
+record: false
+
+paths:
+  live:
+    source: publisher
+    overridePublisher: true

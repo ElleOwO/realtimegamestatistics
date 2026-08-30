@@ -1,7 +1,6 @@
 # Environment variables
 .env
 .env*.local
-.env.example
 
 # Dependencies
 node_modules/
@@ -22,8 +21,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -76,6 +75,7 @@ Thumbs.db
 next-env.d.ts
 AGENTS.md
 .python-version
+.rtgs/
 
 # Post-game runtime state and media
 data/

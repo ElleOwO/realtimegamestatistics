@@ -31,7 +31,9 @@ export function SystemHealthChip({
 }) {
   const [open, setOpen] = useState(false);
   const now = useNow(1000);
-  const delayS = data ? streamDelayS(data.frame.emitted_at_ms / 1000, now) : null;
+  const delayS = data?.runtime.last_frame_age_ms != null
+    ? data.runtime.last_frame_age_ms / 1000
+    : data ? streamDelayS(data.frame.emitted_at_ms / 1000, now) : null;
   const status = healthStatus({
     isConnected,
     hasData: data != null,
@@ -47,8 +49,9 @@ export function SystemHealthChip({
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-full border border-zinc-800 bg-card px-3 py-1.5 transition-colors hover:border-zinc-700"
+        className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 transition-colors hover:border-white/20"
         aria-label="System confidence details"
+        aria-expanded={open}
       >
         <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
         <span
@@ -61,14 +64,17 @@ export function SystemHealthChip({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-zinc-800 bg-popover p-3 shadow-xl">
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="absolute right-0 z-50 mt-2 w-64 rounded-md border border-white/10 bg-popover p-4 shadow-2xl shadow-black/30">
+            <p className="mb-3 font-mono text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               System confidence
             </p>
             <dl className="space-y-1.5 text-xs stat-numerals">
               <Row label="Stream delay" value={delayS != null ? `${delayS.toFixed(1)} s` : "—"} />
               <Row label="Players visible" value={data ? `${visible} / 22` : "—"} />
               <Row label="Payload rate" value={fps != null ? `${fps.toFixed(1)} /s` : "—"} />
+              <Row label="Source" value={data?.runtime.source_state ?? "—"} />
+              <Row label="Processing" value={data?.runtime.processing_latency_ms != null ? `${data.runtime.processing_latency_ms.toFixed(0)} ms` : "—"} />
+              <Row label="Reconnects" value={data ? String(data.runtime.reconnect_count) : "—"} />
               <Row label="Calibration" value={data ? `${(data.frame_quality.calibration_confidence * 100).toFixed(0)}%` : "—"} />
               <Row label="Detection" value={data?.frame_quality.detection_confidence != null ? `${(data.frame_quality.detection_confidence * 100).toFixed(0)}%` : "—"} />
               <Row label="Ball" value={data?.frame_quality.ball_visible ? `${((data.frame_quality.ball_confidence ?? 0) * 100).toFixed(0)}%` : "not visible"} />
@@ -77,7 +83,7 @@ export function SystemHealthChip({
               <Row label="Last frame" value={data ? `#${data.frame.id}` : "—"} />
               <Row label="Socket" value={isConnected ? "connected" : "disconnected"} />
             </dl>
-            <p className="mt-2 border-t border-zinc-800 pt-2 text-[9px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 border-t border-white/10 pt-3 text-[9px] leading-relaxed text-muted-foreground">
               Tactical metrics pause automatically when projection quality is below the gate.
             </p>
           </div>

@@ -9,8 +9,10 @@ import json
 import math
 import threading
 import time
+import zipfile
 from collections import deque, defaultdict
-from typing import Optional
+from pathlib import Path
+from typing import Callable, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 # Allow unsupported MPS ops to fall back to CPU instead of erroring
@@ -22,6 +24,7 @@ import supervision as sv
 import torch
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from inference import get_model
 from sports.annotators.soccer import (
     draw_pitch,
@@ -40,6 +43,10 @@ from analytics_core import (
     PITCH_WIDTH_M,
 )
 from live_state import LiveMatchController
+from live_payload import build_payload_v2
+from observation_io import ObservationRecorder, RecordingHeader
+from event_clips import EncodedClipBuffer, configured_clip_buffer
+from pitch_calibration import field_keypoint_correspondences
 
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 CONFIG = SoccerPitchConfiguration()
@@ -633,63 +640,41 @@ connection_manager = ConnectionManager()
 match_controller = LiveMatchController()
 analytics_engine = AnalyticsEngine(XG_COEFFS)
 analytics_lock = threading.RLock()
+_runtime_lock = threading.RLock()
+_runtime_state: dict = {
+    "run_id": os.environ.get("RTGS_RUN_ID", f"live-{int(time.time())}"),
+    "mode": "live",
+    "source_state": "waiting",
+    "inference_fps": 0.0,
+    "payload_fps": 0.0,
+    "processing_latency_ms": None,
+    "last_frame_at": None,
+    "reconnect_count": 0,
+    "frame_times": deque(maxlen=120),
+}
+_observation_recorder: ObservationRecorder | None = None
 
 
-def build_payload_v2(
-    observation: FrameObservation,
-    analytics: dict,
-    match_state: dict,
-    emitted_at: float | None = None,
-) -> dict:
-    """Build the quality-aware, canonical 105 x 68 live contract."""
-    players = [
-        {
-            "id": player.track_id,
-            "team": 0 if player.team == "team0" else 1,
-            "role": player.role,
-            "x_m": round(player.point[0], 2),
-            "y_m": round(player.point[1], 2),
-            "confidence": round(player.confidence, 3),
+def update_runtime(**values):
+    with _runtime_lock:
+        _runtime_state.update(values)
+
+
+def runtime_snapshot() -> dict:
+    with _runtime_lock:
+        now = time.monotonic()
+        recent = [sample for sample in _runtime_state["frame_times"] if now - sample <= 2]
+        last_frame_at = _runtime_state.get("last_frame_at")
+        return {
+            "run_id": _runtime_state["run_id"],
+            "mode": "live",
+            "source_state": _runtime_state["source_state"],
+            "inference_fps": round(len(recent) / 2, 2),
+            "payload_fps": round(len(recent) / 2, 2),
+            "processing_latency_ms": _runtime_state.get("processing_latency_ms"),
+            "last_frame_age_ms": round((now - last_frame_at) * 1000) if last_frame_at else None,
+            "reconnect_count": _runtime_state["reconnect_count"],
         }
-        for player in observation.players
-    ]
-    ball = None
-    if observation.ball is not None:
-        ball = {
-            "x_m": round(observation.ball[0], 2),
-            "y_m": round(observation.ball[1], 2),
-            "confidence": round(float(observation.ball_confidence or 0.0), 3),
-        }
-    detection_values = [player.confidence for player in observation.players]
-    detection_confidence = sum(detection_values) / len(detection_values) if detection_values else None
-    return {
-        "schema_version": 2,
-        "pitch": {"length_m": PITCH_LENGTH_M, "width_m": PITCH_WIDTH_M},
-        "frame": {
-            "id": observation.frame_id,
-            "source_timestamp_ms": observation.timestamp_ms,
-            "emitted_at_ms": round((emitted_at or time.time()) * 1000),
-        },
-        "frame_quality": {
-            "visible_players": len(players),
-            "ball_visible": ball is not None,
-            "detection_confidence": round(detection_confidence, 3) if detection_confidence is not None else None,
-            "ball_confidence": observation.ball_confidence,
-            "calibration_confidence": round(observation.calibration_confidence, 3),
-            "visible_pitch_fraction": round(observation.visible_pitch_fraction, 3),
-            "reprojection_error_m": round(observation.reprojection_error_m, 3) if observation.reprojection_error_m is not None else None,
-            "observation_coverage": round(float(analytics["quality_coverage"]), 3),
-        },
-        "match": match_state,
-        "observations": {"players": players, "ball": ball},
-        "possession": analytics["possession"],
-        "chance_quality": analytics["chance_quality"],
-        "progression": analytics["progression"],
-        "transitions": analytics["transitions"],
-        "shape": analytics["shape"],
-        "pressing": analytics["pressing"],
-        "events": analytics["events"],
-    }
 
 
 async def broadcast_loop():
@@ -700,6 +685,23 @@ async def broadcast_loop():
         _new_data.clear()
         if _latest_payload and connection_manager.active_connections:
             await connection_manager.broadcast(_latest_payload)
+
+
+async def heartbeat_loop():
+    """Keep stream-health changes visible while frames are stalled."""
+    global _latest_payload
+    while True:
+        await asyncio.sleep(1)
+        if not _latest_payload or not connection_manager.active_connections:
+            continue
+        try:
+            payload = json.loads(_latest_payload)
+            payload["runtime"] = runtime_snapshot()
+            payload["frame"]["emitted_at_ms"] = round(time.time() * 1000)
+            _latest_payload = json.dumps(payload)
+            await connection_manager.broadcast(_latest_payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
 
 
 def safe_source_label(stream_url: str) -> str:
@@ -732,9 +734,21 @@ def main(
     if video_path and stream_url:
         raise ValueError("Choose either video_path or stream_url, not both")
 
+    # Bring up liveness and the dashboard WebSocket before waiting for a phone
+    # publisher. A disposable cloud pod must remain useful while the operator
+    # is still setting up the camera.
+    app = create_app()
+    print(f"\n🚀 Live server starting on http://0.0.0.0:{server_port}  (WS: /ws, Health: /health)")
+    server_thread = threading.Thread(
+        target=lambda: uvicorn.run(app, host="0.0.0.0", port=server_port), daemon=True
+    )
+    server_thread.start()
+
     is_url = bool(video_path) and video_path.lower().startswith(("http://", "https://"))
+    reopen_source: Callable[[], cv2.VideoCapture] | None = None
     if stream_url:
         cap = open_live_stream(stream_url)
+        reopen_source = lambda: open_live_stream(stream_url)
         source_desc = f"live stream '{safe_source_label(stream_url)}'"
     elif video_path:
         if not is_url and not os.path.exists(video_path):
@@ -753,20 +767,32 @@ def main(
         cap = cv2.VideoCapture(cam_id)
         source_desc = f"Camera {cam_id}"
 
-    if not cap.isOpened():
+    if stream_url and not cap.isOpened() and reopen_source is not None:
+        update_runtime(source_state="waiting")
+        while not cap.isOpened():
+            print("⏳ Waiting for the phone publisher at the configured relay…")
+            time.sleep(2)
+            cap = reopen_source()
+    elif not cap.isOpened():
         print("❌ Could not open video source")
         return
 
-    # Bring up health/WebSocket endpoints before the CPU-heavy calibration.
-    # This lets the dashboard distinguish "backend starting" from unavailable.
-    app = create_app()
-    print(f"\n🚀 Live server starting on http://0.0.0.0:{server_port}  (WS: /ws, Health: /health)")
-    server_thread = threading.Thread(
-        target=lambda: uvicorn.run(app, host="0.0.0.0", port=server_port), daemon=True
-    )
-    server_thread.start()
+    if stream_url and reopen_source is not None:
+        update_runtime(source_state="waiting")
+        while True:
+            ok, _first_frame = cap.read()
+            if ok:
+                break
+            cap.release()
+            time.sleep(1)
+            cap = reopen_source()
 
+    update_runtime(source_state="calibrating")
+    clip_buffer = configured_clip_buffer(stream_url)
+    if clip_buffer is not None:
+        clip_buffer.start()
     team_classifier = calibrate_team_classifier(cap)
+    update_runtime(source_state="live")
 
     # Rewind local video so calibration frames are not skipped.
     # (Network/YouTube streams are usually not seekable, so skip the rewind.)
@@ -779,6 +805,8 @@ def main(
         cap,
         team_classifier,
         tolerate_read_failures=video_path is None or stream_url is not None,
+        reopen_source=reopen_source,
+        clip_buffer=clip_buffer,
     )
 
 
@@ -786,13 +814,15 @@ def analytics_loop(
     cap: cv2.VideoCapture,
     team_classifier: TeamClassifier,
     tolerate_read_failures: bool = False,
+    reopen_source: Callable[[], cv2.VideoCapture] | None = None,
+    clip_buffer: EncodedClipBuffer | None = None,
 ):
     """
     Main detection/tracking/projection loop. Runs on the main thread so OpenCV
     GUI operations (imshow, waitKey) work correctly. Publishes payloads to
     shared state for the asyncio broadcast task in the server thread.
     """
-    global _latest_payload
+    global _latest_payload, _observation_recorder
 
     ellipse_annotator = sv.EllipseAnnotator(
         color=sv.ColorPalette.from_hex(["#00BFFF", "#FF1493", "#FFD700"]), thickness=2
@@ -828,6 +858,16 @@ def analytics_loop(
     cached_pitch = None
     cached_voronoi = None
     failed_reads = 0
+    preserved_event_ids: set[str] = set()
+    recording_path = os.environ.get("RTGS_OBSERVATION_RECORDING")
+    recorder = ObservationRecorder(
+        recording_path,
+        RecordingHeader(
+            scenario=os.environ.get("RTGS_RUN_ID", "live-recording"),
+            match=match_controller.snapshot(),
+        ),
+    ) if recording_path else None
+    _observation_recorder = recorder
 
     while True:
         ret, frame = cap.read()
@@ -837,11 +877,23 @@ def analytics_loop(
             failed_reads += 1
             if failed_reads == 1 or failed_reads % 30 == 0:
                 print(f"⚠️  Camera frame unavailable; waiting for DroidCam (attempt {failed_reads})")
+            update_runtime(source_state="stalled")
+            if reopen_source is not None and failed_reads >= 20:
+                cap.release()
+                update_runtime(
+                    source_state="reconnecting",
+                    reconnect_count=runtime_snapshot()["reconnect_count"] + 1,
+                )
+                cap = reopen_source()
+                tracker.reset()
+                M_buffer.clear()
+                failed_reads = 0
             time.sleep(0.25)
             continue
         if failed_reads:
             print("✅ Camera frames resumed")
             failed_reads = 0
+        update_runtime(source_state="live")
         frame_idx += 1
         source_timestamp_ms = round(cap.get(cv2.CAP_PROP_POS_MSEC))
         if source_timestamp_ms <= 0:
@@ -860,6 +912,8 @@ def analytics_loop(
             if quit_requested():
                 break
             continue
+
+        processing_started = time.monotonic()
 
         if INFER_SCALE != 1.0:
             infer_frame = cv2.resize(frame, (0, 0), fx=INFER_SCALE, fy=INFER_SCALE)
@@ -923,22 +977,10 @@ def analytics_loop(
         result_field = FIELD_DETECTION_MODEL.infer(infer_frame, confidence=CONFIDENCE)[
             0
         ]
-        keypoints = sv.KeyPoints.from_inference(result_field)
-
-        if (
-            keypoints.xy is None
-            or len(keypoints.xy) == 0
-            or keypoints.confidence is None
-        ):
-            cached_annotated = annotated_frame
-            show_window("Camera View", annotated_frame)
-            if quit_requested():
-                break
-            continue
-
-        filter_mask = keypoints.confidence[0] > 0.5
-        frame_reference_points = keypoints.xy[0][filter_mask] / INFER_SCALE
-        pitch_reference_points = np.array(CONFIG.vertices)[filter_mask]
+        frame_reference_points, pitch_reference_points, keypoint_confidences = (
+            field_keypoint_correspondences(result_field, CONFIG.vertices)
+        )
+        frame_reference_points /= INFER_SCALE
 
         if len(frame_reference_points) < 4:
             cached_annotated = annotated_frame
@@ -971,7 +1013,7 @@ def analytics_loop(
             ),
             1.0,
         )
-        keypoint_confidence = float(np.mean(keypoints.confidence[0][filter_mask]))
+        keypoint_confidence = float(np.mean(keypoint_confidences))
         inlier_ratio = float(np.mean(inlier_mask)) if inlier_mask is not None else 0.0
         calibration_confidence = float(
             max(0.0, min(
@@ -1083,14 +1125,29 @@ def analytics_loop(
             period=live_match_state["period"],
             phase=live_match_state["phase"],
         )
+        if recorder is not None:
+            recorder.record_frame(observation)
         directions = match_controller.directions()
         with analytics_lock:
             analytics = analytics_engine.update(observation, directions)
+        if clip_buffer is not None:
+            for event in analytics.get("events", []):
+                event_id = str(event.get("id", ""))
+                if event_id and event_id not in preserved_event_ids and event.get("type") == "shot":
+                    preserved_event_ids.add(event_id)
+                    clip_buffer.preserve(event_id)
         payload = build_payload_v2(
             observation=observation,
             analytics=analytics,
             match_state=live_match_state,
+            runtime=runtime_snapshot(),
         )
+        processed_at = time.monotonic()
+        with _runtime_lock:
+            _runtime_state["last_frame_at"] = processed_at
+            _runtime_state["frame_times"].append(processed_at)
+            _runtime_state["processing_latency_ms"] = round((processed_at - processing_started) * 1000, 2)
+        payload["runtime"] = runtime_snapshot()
         _latest_payload = json.dumps(payload)
         _new_data.set()
 
@@ -1219,6 +1276,12 @@ def analytics_loop(
             break
 
     cap.release()
+    if recorder is not None:
+        recorder.close()
+    _observation_recorder = None
+    if clip_buffer is not None:
+        clip_buffer.stop()
+    update_runtime(source_state="finished")
     if DISPLAY_WINDOWS:
         cv2.destroyAllWindows()
 
@@ -1235,8 +1298,42 @@ def create_app() -> FastAPI:
     app = FastAPI()
 
     @app.get("/health")
+    @app.get("/health/live")
     async def health():
-        return {"status": "ok"}
+        return {"status": "ok", "service": "live", **runtime_snapshot()}
+
+    @app.get("/health/ready")
+    async def ready():
+        status = runtime_snapshot()
+        ready_now = status["source_state"] == "live" and status["last_frame_age_ms"] is not None and status["last_frame_age_ms"] <= 3000
+        return {"status": "ok" if ready_now else "starting", "ready": ready_now, **status}
+
+    @app.get("/api/live/status")
+    async def live_status():
+        return {**runtime_snapshot(), "match": match_controller.snapshot()}
+
+    @app.get("/api/live/artifacts")
+    async def live_artifacts():
+        data_root = Path(os.environ.get("RTGS_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
+        data_root.mkdir(parents=True, exist_ok=True)
+        bundle = data_root / "live-artifacts.zip"
+        with analytics_lock:
+            summary = {
+                "runtime": runtime_snapshot(),
+                "match": match_controller.snapshot(),
+                "analytics": analytics_engine.snapshot(),
+            }
+        with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("run-summary.json", json.dumps(summary, indent=2))
+            for filename in ("live-observations.jsonl.gz", "live_match_state.json"):
+                path = data_root / filename
+                if path.is_file():
+                    archive.write(path, filename)
+            clips = data_root / "live-clips"
+            if clips.is_dir():
+                for path in clips.glob("*.mp4"):
+                    archive.write(path, f"event-clips/{path.name}")
+        return FileResponse(bundle, filename=f"rtgs-{_runtime_state['run_id']}-live.zip")
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
@@ -1248,6 +1345,13 @@ def create_app() -> FastAPI:
                 try:
                     command = json.loads(raw)
                     command_id = command.get("command_id")
+                    if _observation_recorder is not None:
+                        source_ms = 0
+                        try:
+                            source_ms = int(json.loads(_latest_payload).get("frame", {}).get("source_timestamp_ms", 0))
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            pass
+                        _observation_recorder.record_command(source_ms, command)
                     if command.get("type") == "event.review":
                         payload = command.get("payload") or {}
                         with analytics_lock:
@@ -1291,6 +1395,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup():
         asyncio.create_task(broadcast_loop())
+        asyncio.create_task(heartbeat_loop())
 
     return app
 

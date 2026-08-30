@@ -1,0 +1,28 @@
+# RunPod uses the PyTorch/CUDA installation supplied by its GPU template.
+# Keep this list aligned with requirements.txt, but do not add torch here:
+# asking pip to resolve the template's system torch package redownloads its
+# multi-gigabyte CUDA dependency set into the virtual environment.
+opencv-python
+numpy
+supervision==0.29.0
+
+roboflow
+inference==0.49.1
+sports @ git+https://github.com/roboflow/sports.git@42c80c06b6b65a7f89455b89fe31cdf4c38ba227
+transformers==4.55.4
+umap-learn
+fastapi>=0.115,<0.116
+anyio>=4,<4.12
+uvicorn[standard]
+python-dotenv
+sqlalchemy>=2.0,<3
+alembic>=1.13,<2
+python-multipart>=0.0.9
+httpx>=0.27,<1
+
+requests
+pandas
+scikit-learn
+yt-dlp
+
+pytest>=8,<9

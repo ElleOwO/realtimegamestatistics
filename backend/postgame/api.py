@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import re
+import secrets
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+import httpx
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 
 from .config import Settings
@@ -22,8 +28,9 @@ from .media import (
     range_video_response,
     resolve_inbox_file,
 )
-from .models import AnalysisJob, EventReview, Match, MatchEvent, Observation, new_id
+from .models import AnalysisJob, EventReview, Match, MatchEvent, MatchSummary, Observation, new_id
 from .processing import RoboflowVideoProcessor
+from .replay_processor import RoutedAnalysisProcessor
 from .reporting import build_report, persist_report
 from .schemas import (
     AnalysisJobRead,
@@ -40,6 +47,8 @@ from .schemas import (
 )
 from .streaming import MatchEventBus
 from .worker import AnalysisProcessor, AnalysisWorker
+from observation_io import write_recording
+from replay_scenarios import get_scenario
 
 
 def _latest_job(session, match_id: str) -> AnalysisJob | None:
@@ -68,7 +77,13 @@ def create_app(
     database = database or Database(settings.database_url)
     database.migrate()
     bus = MatchEventBus()
-    processor = processor or RoboflowVideoProcessor(settings.analysis_hz, settings.keypoint_hz)
+    processor = processor or RoutedAnalysisProcessor(
+        RoboflowVideoProcessor(
+            settings.analysis_hz,
+            settings.keypoint_hz,
+            artifact_policy=settings.artifact_policy,
+        )
+    )
     worker = AnalysisWorker(database, processor, bus, settings.matches_dir)
 
     @asynccontextmanager
@@ -97,6 +112,113 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "postgame"}
+
+    @app.get("/api/runtime")
+    def runtime_config() -> dict[str, str]:
+        return {"mode": settings.mode, "artifact_policy": settings.artifact_policy}
+
+    if settings.mode in {"test", "replay"}:
+        def authorize_test(request: Request) -> None:
+            expected = os.environ.get("RTGS_TEST_TOKEN")
+            if not expected:
+                return
+            supplied = request.headers.get("x-rtgs-authorization", request.headers.get("authorization", "")).removeprefix("Bearer ")
+            if not secrets.compare_digest(supplied, expected):
+                raise HTTPException(status_code=401, detail="Invalid test token")
+
+        @app.post("/api/test/upload", response_model=InboxFile, status_code=201)
+        async def upload_test_clip(request: Request, clip: UploadFile) -> InboxFile:
+            authorize_test(request)
+            filename = Path(clip.filename or "smoke.mp4").name
+            if not re.fullmatch(r"[^/\\\x00]+\.mp4", filename, re.IGNORECASE):
+                raise HTTPException(status_code=422, detail="Test clip must be an MP4")
+            destination = settings.inbox_dir / filename
+            temporary = destination.with_suffix(".uploading")
+            size = 0
+            maximum = int(os.environ.get("RTGS_TEST_UPLOAD_MAX_BYTES", str(300 * 1024 * 1024)))
+            try:
+                with temporary.open("wb") as output:
+                    while chunk := await clip.read(1024 * 1024):
+                        size += len(chunk)
+                        if size > maximum:
+                            raise HTTPException(status_code=413, detail="Test clip exceeds the configured size limit")
+                        output.write(chunk)
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+                await clip.close()
+            return InboxFile(
+                filename=filename,
+                size_bytes=size,
+                modified_at=datetime.fromtimestamp(destination.stat().st_mtime, timezone.utc),
+            )
+
+        @app.get("/api/test/runs/{match_id}/artifacts")
+        def download_test_artifacts(match_id: str, request: Request) -> FileResponse:
+            authorize_test(request)
+            with database.session() as session:
+                match = session.get(Match, match_id)
+                if match is None:
+                    raise HTTPException(status_code=404, detail="Match not found")
+                report = build_report(session, match, provisional=match.status != "completed")
+                job = _latest_job(session, match_id)
+                manifest = {
+                    "match": MatchRead.model_validate(match).model_dump(mode="json"),
+                    "job": AnalysisJobRead.model_validate(job).model_dump(mode="json") if job else None,
+                    "report": report.model_dump(mode="json"),
+                }
+            match_dir = settings.matches_dir / match_id
+            bundle = match_dir / "artifacts.zip"
+            with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("run-summary.json", json.dumps(manifest, indent=2, default=str))
+                for filename in ("observations.jsonl.gz", "team_classifier.json"):
+                    path = match_dir / filename
+                    if path.is_file():
+                        archive.write(path, filename)
+                clips = match_dir / "event-clips"
+                if clips.is_dir():
+                    for path in clips.glob("*.mp4"):
+                        archive.write(path, f"event-clips/{path.name}")
+            return FileResponse(bundle, filename=f"rtgs-{match_id}-artifacts.zip")
+
+        @app.post("/api/test/scenarios/{name}", response_model=MatchRead, status_code=201)
+        def seed_scenario(name: str, request: Request) -> MatchRead:
+            authorize_test(request)
+            try:
+                recording = get_scenario(name)
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            match_id = new_id()
+            match_dir = settings.matches_dir / match_id
+            recording_path = match_dir / "observations.jsonl.gz"
+            write_recording(recording_path, recording.header, recording.items)
+            duration_ms = max(frame.timestamp_ms for frame in recording.frames) + 200
+            match = Match(
+                id=match_id,
+                source_filename=f"{name}.observations.jsonl.gz",
+                source_path=str(recording_path),
+                source_codec="rtgs-observation",
+                duration_ms=duration_ms,
+                fps=5.0,
+                home_team=str(recording.header.match.get("team_names", ["USask"])[0]),
+                away_team=str(recording.header.match.get("team_names", ["USask", "Opponent"])[1]),
+                home_score=0,
+                away_score=0,
+                usask_side="home",
+                periods=[{"number": 1, "start_ms": 0, "end_ms": duration_ms}],
+                directions={"1": "right"},
+                team_mapping={"usask_cluster": 0, "opponent_cluster": 1},
+                setup_complete=True,
+                status="queued",
+            )
+            job = AnalysisJob(match_id=match_id, state="queued")
+            with database.session() as session:
+                session.add(match)
+                session.add(job)
+                session.flush()
+                response = _match_read(session, match)
+            worker.enqueue(job.id)
+            return response
 
     @app.get("/api/v1/inbox", response_model=list[InboxFile])
     def list_inbox() -> list[InboxFile]:
@@ -262,6 +384,9 @@ def create_app(
             match = session.get(Match, match_id)
             if match is None:
                 raise HTTPException(status_code=404, detail="Match not found")
+            summary = session.get(MatchSummary, match_id)
+            if summary is not None and summary.report:
+                return MatchReport.model_validate(summary.report)
             return build_report(session, match, provisional=match.status != "completed")
 
     @app.get("/api/v1/matches/{match_id}/events", response_model=list[MatchEventRead])
@@ -383,5 +508,44 @@ def create_app(
                 await websocket.receive_text()
         except WebSocketDisconnect:
             pass
+
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    async def dashboard_proxy(request: Request, path: str = "") -> Response:
+        """Expose the dashboard through the API port for one-port RunPod use."""
+        dashboard_origin = os.environ.get("RTGS_DASHBOARD_ORIGIN", "http://127.0.0.1:3000").rstrip("/")
+        request_headers = {
+            name: value
+            for name, value in request.headers.items()
+            if name.lower() not in {"accept-encoding", "connection", "content-length", "host"}
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+                upstream = await client.request(
+                    request.method,
+                    f"{dashboard_origin}/{path}",
+                    params=request.query_params,
+                    headers=request_headers,
+                )
+        except httpx.RequestError:
+            return Response(
+                "Dashboard is starting. Retry shortly or run ./rtgs status in the pod.",
+                status_code=503,
+                media_type="text/plain",
+            )
+
+        response_headers = {
+            name: value
+            for name, value in upstream.headers.items()
+            if name.lower() not in {"connection", "content-encoding", "content-length", "transfer-encoding"}
+        }
+        location = response_headers.get("location")
+        if location and location.startswith(dashboard_origin):
+            response_headers["location"] = location.removeprefix(dashboard_origin) or "/"
+        return Response(
+            content=upstream.content if request.method != "HEAD" else b"",
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
 
     return app

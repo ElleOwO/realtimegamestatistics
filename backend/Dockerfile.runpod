@@ -1,0 +1,30 @@
+ARG GPU_BASE_IMAGE=runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM node:20-bookworm-slim AS frontend-builder
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
+COPY frontend/ ./
+RUN NEXT_PUBLIC_DEMO_MODE=false npm run build
+
+FROM ${GPU_BASE_IMAGE}
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apache2-utils ffmpeg libgl1 libglib2.0-0 nginx ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/rtgs
+COPY backend/requirements-runpod.txt backend/constraints-runpod.txt ./backend/
+RUN python -m pip install --upgrade pip setuptools 'wheel==0.45.1' \
+    && python -m pip install --constraint backend/constraints-runpod.txt --requirement backend/requirements-runpod.txt \
+    && python -m pip uninstall -y onnxruntime \
+    && python -m pip install --no-deps onnxruntime-gpu==1.22.0
+
+COPY backend/ ./backend/
+COPY deploy/ ./deploy/
+COPY --from=frontend-builder /build/public ./frontend/public
+COPY --from=frontend-builder /build/.next/standalone ./frontend
+COPY --from=frontend-builder /build/.next/static ./frontend/.next/static
+
+RUN chmod +x deploy/runpod/entrypoint.sh
+EXPOSE 8080
+ENTRYPOINT ["/opt/rtgs/deploy/runpod/entrypoint.sh"]

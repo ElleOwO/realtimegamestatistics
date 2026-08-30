@@ -30,7 +30,7 @@
   --chart-3: #FFFFFF;
   --chart-4: #000000;
   --chart-5: #3f3f46;
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --sidebar: #171717;
   --sidebar-foreground: #ececec;
   --sidebar-primary: #0B6A41;
@@ -42,9 +42,10 @@
 }
 
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-serif: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-data), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -96,6 +97,9 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    background-image: linear-gradient(90deg, color-mix(in srgb, var(--foreground) 2%, transparent) 1px, transparent 1px);
+    background-size: 5rem 100%;
+    background-attachment: fixed;
   }
 
   /* Stat readouts: aligned numerals for live-updating scores/metrics */
@@ -104,12 +108,115 @@
   }
 
   h1, h2, h3, h4 {
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    font-family: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    line-height: 1.05;
   }
 
   h1 { font-size: var(--text-2xl); }
   h2 { font-size: var(--text-xl); }
   h3 { font-size: var(--text-lg); }
   h4 { font-size: var(--text-base); }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .app-container {
+    width: 100%;
+    max-width: 1540px;
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  .app-page {
+    padding-block: 1.25rem;
+  }
+
+  .app-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .live-shell {
+    animation: match-arrival 520ms cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  .match-grid {
+    background-image:
+      linear-gradient(90deg, transparent calc(50% - .5px), color-mix(in srgb, var(--foreground) 13%, transparent) 50%, transparent calc(50% + .5px)),
+      linear-gradient(color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 2.5rem, 2.5rem 100%;
+  }
+
+  .eyebrow {
+    font-family: var(--font-data), ui-monospace, monospace;
+    font-size: .625rem;
+    font-weight: 600;
+    letter-spacing: .2em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .section-rule {
+    position: relative;
+  }
+
+  .section-rule::before {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 2px;
+    content: "";
+    background: linear-gradient(var(--primary), var(--secondary));
+  }
+}
+
+@media (min-width: 640px) {
+  .app-container {
+    padding-inline: 1.5rem;
+  }
+
+  .app-page {
+    padding-block: 1.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-container {
+    padding-inline: 1.75rem;
+  }
+
+  .app-page {
+    padding-block: 2rem;
+  }
+}
+
+@keyframes match-arrival {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }

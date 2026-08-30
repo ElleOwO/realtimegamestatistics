@@ -1,0 +1,10 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.20.1
+    container_name: rtgs-relay
+    restart: unless-stopped
+    ports:
+      - "1936:1936/tcp"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro

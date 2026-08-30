@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import pickle
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -25,9 +24,87 @@ from analytics_core import (
     PlayerObservation,
     calculate_xg as shared_calculate_xg,
 )
+from observation_io import ObservationRecorder, RecordingHeader
+from pitch_calibration import field_keypoint_correspondences
 from .media import extract_preflight_frames
 from .models import Match
 from .worker import AnalysisBatch
+from .shared_adapter import AnalyticsBatchAdapter
+
+
+def preflight_sample_timestamps(periods: list[dict[str, Any]], duration_ms: int) -> list[int]:
+    """Return calibration timestamps from active play rather than the whole file."""
+    fractions = (0.08, 0.22, 0.36, 0.50, 0.64, 0.78, 0.92)
+    timestamps: list[int] = []
+    for period in periods:
+        start_ms = max(0, int(period["start_ms"]))
+        end_ms = min(duration_ms, int(period["end_ms"]))
+        if end_ms <= start_ms:
+            continue
+        span_ms = end_ms - start_ms
+        timestamps.extend(start_ms + int(span_ms * fraction) for fraction in fractions)
+    if not timestamps:
+        timestamps = [int(duration_ms * fraction) for fraction in fractions]
+    return sorted(set(timestamps))
+
+
+class JerseyBrightnessClassifier:
+    """Classify the two outfield kits from the lightness of the torso region.
+
+    Veo player crops are small and mostly grass, which can make general-purpose
+    image embeddings cluster by pose or camera view. The jersey torso is the
+    stable signal needed here. Cluster 0 is always the darker kit and cluster 1
+    the lighter kit so saved mappings remain deterministic across restarts.
+    """
+
+    def __init__(self) -> None:
+        self.centers: Any | None = None
+
+    @staticmethod
+    def _scores(crops: list[Any]) -> Any:
+        import cv2
+        import numpy as np
+
+        scores: list[float] = []
+        for crop in crops:
+            height, width = crop.shape[:2]
+            torso = crop[
+                max(0, int(height * 0.15)) : max(1, int(height * 0.58)),
+                max(0, int(width * 0.20)) : max(1, int(width * 0.80)),
+            ]
+            if torso.size == 0:
+                torso = crop
+            lightness = cv2.cvtColor(torso, cv2.COLOR_BGR2LAB)[:, :, 0]
+            scores.append(float(lightness.mean()))
+        return np.asarray(scores, dtype=float)
+
+    def fit(self, crops: list[Any]) -> None:
+        import numpy as np
+
+        scores = self._scores(crops)
+        if len(scores) < 2:
+            raise ValueError("At least two player crops are required to fit team kits")
+        centers = np.quantile(scores, [0.25, 0.75]).astype(float)
+        for _ in range(30):
+            labels = np.abs(scores[:, None] - centers[None, :]).argmin(axis=1)
+            updated = np.asarray([
+                scores[labels == cluster].mean() if np.any(labels == cluster) else centers[cluster]
+                for cluster in (0, 1)
+            ])
+            if np.allclose(updated, centers):
+                break
+            centers = updated
+        self.centers = np.sort(centers)
+
+    def predict(self, crops: list[Any]) -> Any:
+        import numpy as np
+
+        if not crops:
+            return np.asarray([], dtype=int)
+        if self.centers is None:
+            raise RuntimeError("Team kit classifier has not been fitted")
+        scores = self._scores(crops)
+        return np.abs(scores[:, None] - self.centers[None, :]).argmin(axis=1).astype(int)
 
 
 class RoboflowVideoProcessor:
@@ -40,9 +117,10 @@ class RoboflowVideoProcessor:
     PLAYER_MODEL_ID = "spen-rtgs-oc4ez/4"
     FIELD_MODEL_ID = "football-field-detection-f07vi/14"
 
-    def __init__(self, analysis_hz: float = 10.0, keypoint_hz: float = 2.0):
+    def __init__(self, analysis_hz: float = 10.0, keypoint_hz: float = 2.0, artifact_policy: str = "compact"):
         self.analysis_hz = analysis_hz
         self.keypoint_hz = keypoint_hz
+        self.artifact_policy = artifact_policy
         self._runtime: dict[str, Any] | None = None
         self._classifiers: dict[str, Any] = {}
 
@@ -58,7 +136,6 @@ class RoboflowVideoProcessor:
             import supervision as sv
             import torch
             from inference import get_model
-            from sports.common.team import TeamClassifier
             from sports.common.view import ViewTransformer
             from sports.configs.soccer import SoccerPitchConfiguration
         except ImportError as exc:
@@ -70,7 +147,6 @@ class RoboflowVideoProcessor:
             "cv2": cv2,
             "np": np,
             "sv": sv,
-            "TeamClassifier": TeamClassifier,
             "ViewTransformer": ViewTransformer,
             "config": SoccerPitchConfiguration(),
             "player_model": get_model(model_id=self.PLAYER_MODEL_ID, api_key=api_key),
@@ -96,35 +172,38 @@ class RoboflowVideoProcessor:
         if not cap.isOpened():
             raise RuntimeError("Could not open imported match video")
         crops: list[Any] = []
-        for fraction in (0.05, 0.12, 0.25, 0.38, 0.55, 0.68, 0.82, 0.92):
-            cap.set(cv2.CAP_PROP_POS_MSEC, match.duration_ms * fraction)
+        for timestamp_ms in preflight_sample_timestamps(match.periods, match.duration_ms):
+            cap.set(cv2.CAP_PROP_POS_MSEC, timestamp_ms)
             ok, frame = cap.read()
             if not ok:
                 continue
             _, frame_crops = self._player_crops(runtime, frame)
             crops.extend(frame_crops)
-            if len(crops) >= 80:
-                break
         cap.release()
         if len(crops) < 20:
             raise RuntimeError(
                 f"Preflight found only {len(crops)} player crops; at least 20 clear player detections are required"
             )
-        classifier = runtime["TeamClassifier"](device=runtime["device"])
+        classifier = JerseyBrightnessClassifier()
         classifier.fit(crops)
         labels = classifier.predict(crops)
         self._classifiers[match.id] = classifier
-        try:
-            with (match_dir / "team_classifier.pkl").open("wb") as destination:
-                pickle.dump(classifier, destination)
-        except Exception:
-            (match_dir / "team_classifier.pkl").unlink(missing_ok=True)
+        (match_dir / "team_classifier.json").write_text(json.dumps({
+            "schema_version": 1,
+            "kind": "jersey-brightness",
+            "centers": [float(value) for value in classifier.centers],
+        }, indent=2))
 
         previews = match_dir / "preflight"
         previews.mkdir(exist_ok=True)
         clusters: list[dict[str, Any]] = []
         for cluster in (0, 1):
-            selected = [crop for crop, label in zip(crops, labels) if int(label) == cluster][:12]
+            candidates = [crop for crop, label in zip(crops, labels) if int(label) == cluster]
+            if len(candidates) > 12:
+                indices = np.linspace(0, len(candidates) - 1, 12, dtype=int)
+                selected = [candidates[int(index)] for index in indices]
+            else:
+                selected = candidates
             if not selected:
                 continue
             tiles = [cv2.resize(crop, (80, 140)) for crop in selected]
@@ -148,14 +227,21 @@ class RoboflowVideoProcessor:
     def _classifier(self, match: Match, match_dir: Path) -> Any:
         if match.id in self._classifiers:
             return self._classifiers[match.id]
-        saved = match_dir / "team_classifier.pkl"
+        runtime = self._load_runtime()
+        saved = match_dir / "team_classifier.json"
         if saved.is_file():
             try:
-                with saved.open("rb") as source:
-                    classifier = pickle.load(source)
+                value = json.loads(saved.read_text())
+                if value.get("schema_version") != 1 or value.get("kind") != "jersey-brightness":
+                    raise ValueError("unsupported classifier format")
+                centers = value.get("centers")
+                if not isinstance(centers, list) or len(centers) != 2:
+                    raise ValueError("classifier must contain two centres")
+                classifier = JerseyBrightnessClassifier()
+                classifier.centers = runtime["np"].asarray([float(item) for item in centers], dtype=float)
                 self._classifiers[match.id] = classifier
                 return classifier
-            except Exception:
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 saved.unlink(missing_ok=True)
         self.preflight(match, match_dir)
         return self._classifiers[match.id]
@@ -198,7 +284,14 @@ class RoboflowVideoProcessor:
         except (OSError, ValueError):
             pass
         shared_engine = AnalyticsEngine(core_coeffs)
-        shared_event_count = 0
+        shared_adapter = AnalyticsBatchAdapter(shared_engine)
+        recorder = ObservationRecorder(
+            match_dir / "observations.jsonl.gz",
+            RecordingHeader(
+                scenario=f"postgame-{match.id}",
+                match={"team_names": [match.home_team, match.away_team], "score": [match.home_score, match.away_score]},
+            ),
+        )
         last_possession = "unknown"
         last_loss_ms: dict[str, int] = {}
         pending_counters: dict[str, dict[str, Any]] = {}
@@ -216,7 +309,7 @@ class RoboflowVideoProcessor:
             cv2.VideoWriter_fourcc(*"mp4v"),
             self.analysis_hz,
             (1280, 720),
-        )
+        ) if self.artifact_policy == "full" else None
         mapping = match.team_mapping
         usask_cluster = int(mapping["usask_cluster"])
         cluster_to_side = {
@@ -277,20 +370,41 @@ class RoboflowVideoProcessor:
 
                 reprojection_error_m = None
                 visible_fraction = None
+                calibration_warning = None
                 if transformer is None or timestamp_ms - last_keypoint_ms >= keypoint_interval_ms:
                     field_result = runtime["field_model"].infer(frame, confidence=0.3)[0]
-                    keypoints = sv.KeyPoints.from_inference(field_result)
-                    if keypoints.xy is not None and len(keypoints.xy) and keypoints.confidence is not None:
-                        mask = keypoints.confidence[0] > 0.5
-                        frame_points = keypoints.xy[0][mask]
-                        pitch_points = np.array(config.vertices)[mask]
-                        if len(frame_points) >= 4:
-                            transformer = runtime["ViewTransformer"](source=frame_points, target=pitch_points)
-                            projected = transformer.transform_points(frame_points)
-                            reprojection_error_m = float(np.mean(np.linalg.norm(projected - pitch_points, axis=1)) / 100)
-                            visible_fraction = min(float(cv2.contourArea(cv2.convexHull(frame_points.astype(np.float32))) / (frame.shape[0] * frame.shape[1])), 1.0)
-                            transformer_confidence = max(0.0, min(1.0 - reprojection_error_m / 4.0, 1.0))
-                            last_keypoint_ms = timestamp_ms
+                    frame_points, pitch_points, _ = field_keypoint_correspondences(
+                        field_result, config.vertices
+                    )
+                    if len(frame_points) >= 4:
+                        try:
+                            candidate = runtime["ViewTransformer"](
+                                source=frame_points, target=pitch_points
+                            )
+                            projected = candidate.transform_points(frame_points)
+                            if not np.all(np.isfinite(projected)):
+                                raise ValueError("Homography produced non-finite coordinates")
+                            transformer = candidate
+                            reprojection_error_m = float(
+                                np.mean(np.linalg.norm(projected - pitch_points, axis=1)) / 100
+                            )
+                            visible_fraction = min(
+                                float(
+                                    cv2.contourArea(cv2.convexHull(frame_points.astype(np.float32)))
+                                    / (frame.shape[0] * frame.shape[1])
+                                ),
+                                1.0,
+                            )
+                            transformer_confidence = max(
+                                0.0, min(1.0 - reprojection_error_m / 4.0, 1.0)
+                            )
+                        except (ValueError, cv2.error, np.linalg.LinAlgError) as exc:
+                            transformer_confidence *= 0.9
+                            calibration_warning = (
+                                f"Invalid pitch calibration at {timestamp_ms / 1000:.1f}s; "
+                                f"using the last valid projection ({exc})"
+                            )
+                        last_keypoint_ms = timestamp_ms
                     elif transformer is not None:
                         transformer_confidence *= 0.9
                 else:
@@ -408,67 +522,64 @@ class RoboflowVideoProcessor:
                         series.append({"metric": "shape", "value": values, "confidence": transformer_confidence})
 
                 core_directions = {"team0": directions["home"], "team1": directions["away"]}
-                shared_snapshot = shared_engine.update(
-                    FrameObservation(
-                        frame_id=frame_index,
-                        timestamp_ms=timestamp_ms,
-                        players=core_players,
-                        ball=ball_point,
-                        ball_confidence=(float(ball_detections.confidence[0]) if len(ball_detections) and ball_detections.confidence is not None else None),
-                        calibration_confidence=transformer_confidence,
-                        visible_pitch_fraction=visible_fraction or 0.0,
-                        reprojection_error_m=reprojection_error_m,
-                        match_clock_s=match_clock_ms(timestamp_ms, match.periods) / 1000,
-                        period=period,
-                        phase=match_phase(timestamp_ms, match.periods),
-                    ),
-                    core_directions,
-                )
-                new_shared_events = shared_engine.events[shared_event_count:]
-                shared_event_count = len(shared_engine.events)
-                for shared in new_shared_events:
-                    if shared["type"] not in {"behind_line_entry", "pressure_attempt", "pressure_success", "pressure_escape", "forced_long_candidate"}:
-                        continue
-                    team_code = shared.get("team")
-                    event_team = "home" if team_code == "team0" else "away" if team_code == "team1" else None
-                    location = shared.get("location")
-                    details = {
-                        key: value for key, value in shared.items()
-                        if key not in {"id", "type", "timestamp_ms", "team", "location", "status", "confidence", "period", "match_clock_s"}
-                    }
-                    if details.get("pressing_team") in ("team0", "team1"):
-                        details["pressing_team"] = "home" if details["pressing_team"] == "team0" else "away"
-                    events.append({
-                        "type": shared["type"], "team": event_team, "period": period,
-                        "pitch_x_m": location[0] if location else None,
-                        "pitch_y_m": location[1] if location else None,
-                        "possession_context": state, "play_context": "open_play",
-                        "confidence": shared["confidence"], "review_status": "pending",
-                        "details": details,
-                    })
-                series.append({"metric": "pressing", "value": shared_snapshot["pressing"], "confidence": transformer_confidence})
-
-                confidence_values = [item["detection_confidence"] for item in observations]
-                detection_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else None
-                emit(AnalysisBatch(
+                canonical_observation = FrameObservation(
+                    frame_id=frame_index,
                     timestamp_ms=timestamp_ms,
-                    observations=observations,
-                    events=events,
-                    time_series=series,
-                    confidence={"reprojection_error_m": reprojection_error_m, "visible_pitch_fraction": visible_fraction, "detection_confidence": detection_confidence, "calibration_confidence": transformer_confidence if transformer else None, "camera_cut": camera_cut},
-                    detection_coverage=player_samples / total_samples,
-                    calibration_coverage=calibration_samples / total_samples,
-                    log=f"Camera cut at {timestamp_ms / 1000:.1f}s; tracker reset" if camera_cut else None,
-                ))
-                annotated = cv2.resize(annotated, (1280, 720))
-                cv2.putText(annotated, f"{timestamp_ms / 60000:05.2f}  possession: {state}", (24, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                writer.write(annotated)
+                    players=core_players,
+                    ball=ball_point,
+                    ball_confidence=(float(ball_detections.confidence[0]) if len(ball_detections) and ball_detections.confidence is not None else None),
+                    calibration_confidence=transformer_confidence,
+                    visible_pitch_fraction=visible_fraction or 0.0,
+                    reprojection_error_m=reprojection_error_m,
+                    match_clock_s=match_clock_ms(timestamp_ms, match.periods) / 1000,
+                    period=period,
+                    phase=match_phase(timestamp_ms, match.periods),
+                )
+                recorder.record_frame(canonical_observation)
+                batch = shared_adapter.update(
+                    canonical_observation,
+                    core_directions,
+                    image_observations=observations,
+                    log=(
+                        f"Camera cut at {timestamp_ms / 1000:.1f}s; tracker reset"
+                        if camera_cut else calibration_warning
+                    ),
+                )
+                if batch.confidence is not None:
+                    batch.confidence["camera_cut"] = camera_cut
+                emit(batch)
+                if writer is not None:
+                    annotated = cv2.resize(annotated, (1280, 720))
+                    cv2.putText(annotated, f"{timestamp_ms / 60000:05.2f}  possession: {state}", (24, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    writer.write(annotated)
         finally:
             cap.release()
-            writer.release()
+            recorder.close()
+            if writer is not None:
+                writer.release()
 
-        if not cancelled() and annotated_temp.is_file():
+        if self.artifact_policy == "full" and not cancelled() and annotated_temp.is_file():
             annotated = match_dir / "annotated.mp4"
             command = ["ffmpeg", "-y", "-i", str(annotated_temp), "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-movflags", "+faststart", str(annotated)]
             subprocess.run(command, check=True, capture_output=True)
             annotated_temp.unlink(missing_ok=True)
+
+    def cleanup(self, match: Match, match_dir: Path) -> None:
+        """Apply retention after the durable report has been committed."""
+        if self.artifact_policy == "full":
+            return
+        for filename in ("annotated-temp.mp4", "annotated.mp4", "source-browser.mp4"):
+            (match_dir / filename).unlink(missing_ok=True)
+        if self.artifact_policy == "compact":
+            source = Path(match.source_path)
+            if source.resolve().parent == match_dir.resolve() and source.name == "source.mp4":
+                source.unlink(missing_ok=True)
+            (match_dir / "team_classifier.json").unlink(missing_ok=True)
+            previews = match_dir / "preflight"
+            if previews.is_dir():
+                for preview in previews.glob("*.jpg"):
+                    preview.unlink(missing_ok=True)
+                try:
+                    previews.rmdir()
+                except OSError:
+                    pass

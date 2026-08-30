@@ -94,6 +94,9 @@ class AnalysisWorker:
                         job.failure_detail = str(exc)
                         job.finished_at = datetime.now(timezone.utc)
                         match_id = job.match_id
+                        match = session.get(Match, match_id)
+                        if match is not None:
+                            match.status = "failed"
                     else:
                         match_id = ""
                 if match_id:
@@ -204,3 +207,14 @@ class AnalysisWorker:
             job.finished_at = datetime.now(timezone.utc)
             payload = {"job_id": job.id, "state": job.state, "report": report.model_dump(mode="json")}
         self.bus.publish(match_id, message_type, payload)
+        if message_type == "completed":
+            cleanup = getattr(self.processor, "cleanup", None)
+            if cleanup is not None:
+                try:
+                    cleanup(match, self.matches_dir / match_id)
+                except OSError as exc:
+                    self.bus.publish(match_id, "job_status", {
+                        "job_id": job_id,
+                        "state": "completed",
+                        "log": f"Artifact cleanup warning: {exc}",
+                    })

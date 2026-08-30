@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "name": "standard",
+  "match": {
+    "team_names": ["USask", "Opponent"],
+    "score": [0, 0]
+  },
+  "frame_interval_ms": 200,
+  "segments": [
+    {
+      "control": 0,
+      "repeat": 8,
+      "ball": [25.0, 30.0]
+    },
+    {
+      "control": 0,
+      "points": [
+        [55.0, 30.0],
+        [62.0, 30.0],
+        [68.0, 30.0],
+        [71.0, 30.0],
+        [73.0, 34.0],
+        [76.0, 34.0],
+        [79.0, 34.0],
+        [83.0, 34.0]
+      ]
+    },
+    {
+      "control": 1,
+      "repeat": 8,
+      "ball": [68.0, 40.0]
+    }
+  ],
+  "quality_drop": true,
+  "expectation": {
+    "minimum_final_third_entries_team0": 1,
+    "minimum_shots_team0": 1,
+    "quality_coverage_below": 1.0
+  }
+}

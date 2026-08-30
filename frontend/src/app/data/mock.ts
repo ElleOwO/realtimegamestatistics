@@ -43,6 +43,7 @@ export const MOCK_PAYLOAD: AnalyticsPayload = {
   schema_version: 2,
   pitch: { length_m: 105, width_m: 68 },
   frame: { id: 1842, source_timestamp_ms: 3_780_000, emitted_at_ms: Date.now() },
+  runtime: { run_id: "demo", mode: "replay", source_state: "live", inference_fps: 10, payload_fps: 10, processing_latency_ms: 34, last_frame_age_ms: 0, reconnect_count: 0 },
   frame_quality: {
     visible_players: 20,
     ball_visible: true,
