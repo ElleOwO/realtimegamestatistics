@@ -35,7 +35,9 @@ if [[ "$RTGS_MODE" != live ]]; then
   pids+=("$!")
 fi
 
-if [[ "$RTGS_MODE" == replay ]]; then
+if [[ "${RTGS_LIVE_SOURCE:-}" == canadawest ]]; then
+  python "$ROOT/backend/broadcast_worker.py" &
+elif [[ "$RTGS_MODE" == replay ]]; then
   python "$ROOT/backend/replay_server.py" --scenario "${RTGS_REPLAY_SCENARIO:-standard}" --port 8001 &
 else
   relay_read_url="${RTGS_RELAY_READ_URL:?RTGS_RELAY_READ_URL is required for live CV}"

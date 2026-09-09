@@ -1,8 +1,12 @@
 # RTGS — Real-Time Game Analysis
 
 RTGS turns live University of Saskatchewan women's soccer footage into
-quality-gated team analytics for an analyst dashboard. The production path is
-phone RTMPS → stable relay → disposable RunPod GPU → WebSocket dashboard.
+quality-gated team analytics for an analyst dashboard. The new CanadaWest pilot
+uses a persistent browser dashboard/controller and a disposable RunPod GPU:
+CanadaWest playback → decode/detect → shared analytics → dashboard.
+See [CanadaWest setup and acceptance checks](docs/canadawest-live.md); real
+account playback and GPU performance still need validation.
+The existing phone RTMPS → relay → RunPod workflow remains available.
 Post-game analysis remains available as a test and review harness, but live
 analysis is the product.
 

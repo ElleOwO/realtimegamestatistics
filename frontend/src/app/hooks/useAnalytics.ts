@@ -40,6 +40,15 @@ export interface LiveMatchState {
 }
 
 export interface LiveRuntimeStatus {
+  source_provider?: "canadawest";
+  analysis_state?: "paused" | "analyzing";
+  teams_confirmed?: boolean;
+  source_playhead_ms?: number;
+  broadcast_delay_ms?: number | null;
+  queue_delay_ms?: number | null;
+  dropped_frames?: number;
+  preview_timestamp_ms?: number | null;
+  clips_ready?: string[];
   run_id: string;
   mode: "live" | "replay";
   source_state: "waiting" | "calibrating" | "live" | "stalled" | "reconnecting" | "finished";
@@ -70,6 +79,8 @@ export interface ShotEvent {
 }
 
 export interface TeamChanceStats {
+  confirmed_shots?: number;
+  confirmed_xg?: number;
   status: "unavailable" | "partial" | "experimental" | "available";
   shots: number;
   pending_shots: number;
@@ -165,7 +176,8 @@ export interface TeamPressingStats {
 }
 
 export interface LiveCommand {
-  type: "match.configure" | "match.set_phase" | "match.set_clock" | "match.set_score" | "match.set_targets" | "match.reset" | "event.review";
+  type: "match.configure" | "match.set_phase" | "match.set_clock" | "match.set_score" | "match.set_targets" | "match.reset" | "event.review" | "analysis.confirm_teams" | "analysis.set_enabled" | "analysis.exclude_interval";
+  source_timestamp_ms?: number;
   payload?: Record<string, unknown>;
 }
 

@@ -9,3 +9,4 @@ pytest>=8,<9
 websockets>=12,<16
 numpy==2.2.6
 opencv-python-headless==4.10.0.84
+av==15.1.0

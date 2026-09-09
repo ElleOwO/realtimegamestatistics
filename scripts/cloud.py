@@ -42,6 +42,8 @@ def load_config() -> dict[str, Any]:
         "relay_publish_url": "RTGS_RELAY_PUBLISH_URL",
         "relay_read_url": "RTGS_RELAY_READ_URL",
         "roboflow_api_key": "ROBOFLOW_API_KEY",
+        "canadawest_email": "RTGS_CANADAWEST_EMAIL",
+        "canadawest_password": "RTGS_CANADAWEST_PASSWORD",
     }
     for key, environment in aliases.items():
         if os.environ.get(environment):
@@ -88,12 +90,16 @@ class RunPodClient:
                 raw = response.read()
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as exc:
+            if method == "DELETE" and exc.code == 404:
+                return None
             detail = exc.read().decode(errors="replace")
             raise RuntimeError(f"RunPod {method} {path} failed ({exc.code}): {detail}") from exc
 
     def create(self, config: dict[str, Any], mode: str, run_id: str, operator_token: str) -> dict[str, Any]:
-        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-        image = str(config.get("gpu_image", "ghcr.io/elleowo/realtimegamestatistics:{sha}")).replace("{sha}", sha)
+        image = str(config.get("gpu_image", "ghcr.io/elleowo/realtimegamestatistics:{sha}"))
+        if "{sha}" in image:
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+            image = image.replace("{sha}", sha)
         body: dict[str, Any] = {
             "name": f"rtgs-{run_id}",
             "computeType": "GPU",
@@ -110,7 +116,7 @@ class RunPodClient:
                 "RTGS_OPERATOR_USER": "rtgs",
                 "RTGS_OPERATOR_TOKEN": operator_token,
                 "RTGS_TEST_TOKEN": operator_token,
-                "RTGS_RELAY_READ_URL": config["relay_read_url"],
+                "RTGS_RELAY_READ_URL": config.get("relay_read_url", ""),
                 "ROBOFLOW_API_KEY": config["roboflow_api_key"],
                 "PROCESS_EVERY": str(config.get("process_every", 3)),
                 "INFER_SCALE": str(config.get("infer_scale", 0.5)),
@@ -118,6 +124,16 @@ class RunPodClient:
                 "HF_HOME": "/workspace/cache/huggingface",
             },
         }
+        if config.get("canadawest_event_url"):
+            body["env"].update({
+                "RTGS_LIVE_SOURCE": "canadawest",
+                "RTGS_CANADAWEST_EVENT_URL": config["canadawest_event_url"],
+                "RTGS_CANADAWEST_EMAIL": config.get("canadawest_email", ""),
+                "RTGS_CANADAWEST_PASSWORD": config.get("canadawest_password", ""),
+                "RTGS_DATA_DIR": f"/workspace/rtgs-data/{run_id}",
+                "RTGS_WORKER_MANAGED": "1",
+                "RTGS_SESSION_DEADLINE": str(config.get("session_deadline", "")),
+            })
         if config.get("container_registry_auth_id"):
             body["containerRegistryAuthId"] = config["container_registry_auth_id"]
         if config.get("network_volume_id"):
@@ -127,7 +143,7 @@ class RunPodClient:
         body["gpuTypeIds"] = gpu_types
         result = self.request("POST", "/pods", body)
         if not isinstance(result, dict) or not result.get("id"):
-            raise RuntimeError(f"RunPod returned an invalid create response: {result}")
+            raise RuntimeError("RunPod returned an invalid create response")
         return result
 
     def delete(self, pod_id: str) -> None:
@@ -306,7 +322,11 @@ def create_pod(config: dict[str, Any], mode: str) -> tuple[RunPodClient, dict[st
     pod = client.create(config, mode, run_id, operator_token)
     base_url = f"https://{pod['id']}-8080.proxy.runpod.net"
     print(f"Created RunPod {pod['id']}; waiting for the gateway…")
-    wait_http(f"{base_url}/healthz", timeout_seconds=900)
+    try:
+        wait_http(f"{base_url}/healthz", timeout_seconds=900)
+    except BaseException:
+        client.delete(pod["id"])
+        raise
     return client, pod, base_url, operator_token
 
 

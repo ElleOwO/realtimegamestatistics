@@ -1,0 +1,23 @@
+FROM node:20-bookworm-slim AS frontend-builder
+WORKDIR /build
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+COPY frontend/ ./
+RUN NEXT_PUBLIC_DEMO_MODE=false npm run build
+
+FROM python:3.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends nginx apache2-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/rtgs
+COPY backend/requirements-dev.txt ./backend/
+RUN pip install --no-cache-dir -r backend/requirements-dev.txt
+COPY backend/ ./backend/
+COPY scripts/ ./scripts/
+COPY deploy/control/ ./deploy/control/
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /build/.next/standalone ./frontend/
+COPY --from=frontend-builder /build/.next/static ./frontend/.next/static
+COPY --from=frontend-builder /build/public ./frontend/public
+ENV PYTHONPATH=/opt/rtgs/backend RTGS_MODE=live NODE_ENV=production PORT=3000 HOSTNAME=127.0.0.1 RTGS_CONTROL_DATA_DIR=/var/lib/rtgs
+EXPOSE 8080
+ENTRYPOINT ["bash", "/opt/rtgs/deploy/control/entrypoint.sh"]

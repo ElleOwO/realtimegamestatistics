@@ -18,9 +18,11 @@ RUN python -m pip install --upgrade pip setuptools 'wheel==0.45.1' \
     && python -m pip install --constraint backend/constraints-runpod.txt --requirement backend/requirements-runpod.txt \
     && python -m pip uninstall -y onnxruntime \
     && python -m pip install --no-deps onnxruntime-gpu==1.22.0
+RUN python -m playwright install --with-deps chromium
 
 COPY backend/ ./backend/
 COPY deploy/ ./deploy/
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=frontend-builder /build/public ./frontend/public
 COPY --from=frontend-builder /build/.next/standalone ./frontend
 COPY --from=frontend-builder /build/.next/static ./frontend/.next/static

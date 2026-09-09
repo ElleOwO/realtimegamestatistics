@@ -19,11 +19,11 @@ const STATUS_STYLES: Record<LiveMetricStatus, string> = {
   unavailable: "border-white/10 bg-white/[0.03] text-muted-foreground",
 };
 
-export function LiveReport({ data }: { data: AnalyticsPayload | null }) {
+export function LiveReport({ data, coreOnly = false }: { data: AnalyticsPayload | null; coreOnly?: boolean }) {
   const [active, setActive] = useState<LiveSectionId>("overview");
   const sections = useMemo(
-    () => data ? buildLiveReportSections(data) : buildLiveReportPlaceholders(),
-    [data],
+    () => (data ? buildLiveReportSections(data) : buildLiveReportPlaceholders()).filter(item => !coreOnly || ["overview", "territory", "quality"].includes(item.id)).map(item => !coreOnly || item.id === "quality" ? item : { ...item, metrics: item.metrics.filter(metric => ["possession", "shots", "xg", "pending_shots", "shots_on_target", "final_third_entries", "penalty_area_entries", "field_tilt"].includes(metric.id)) }),
+    [data, coreOnly],
   );
   const section = sections.find((item) => item.id === active) ?? sections[0];
   const teamNames: [string, string] = data?.match.team_names ?? ["USask", "Opponent"];

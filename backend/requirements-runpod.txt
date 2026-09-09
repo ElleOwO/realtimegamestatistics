@@ -26,3 +26,5 @@ scikit-learn
 yt-dlp
 
 pytest>=8,<9
+av==15.1.0
+playwright==1.51.1

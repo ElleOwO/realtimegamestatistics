@@ -224,8 +224,8 @@ export function buildLiveReportSections(data: AnalyticsPayload): LiveReportSecti
 
   const overview: LiveReportMetric[] = [
     pair("possession", "Possession", [data.possession.team0_pct, data.possession.team1_pct], possessionStatuses, "%", detectionConfidence, possessionCoverage, "Share of quality-gated controlled possession time.", 1),
-    pair("shots", "Shots", [chance[0].shots, chance[1].shots], chanceStatuses, "shots", ballConfidence, qualityCoverage, "Cumulative automatic shot candidates, including pending reviews."),
-    pair("xg", "Expected goals", [chance[0].xg, chance[1].xg], chanceStatuses, "xG", ballConfidence, qualityCoverage, "Cumulative xG from detected shot locations.", 2),
+    pair("shots", "Shots", [chance[0].confirmed_shots ?? chance[0].shots, chance[1].confirmed_shots ?? chance[1].shots], chanceStatuses, "shots", ballConfidence, qualityCoverage, data.runtime.source_provider === "canadawest" ? "Analyst-confirmed shots. Pending candidates are shown separately." : "Cumulative automatic shot candidates, including pending reviews."),
+    pair("xg", "Expected goals", [chance[0].confirmed_xg ?? chance[0].xg, chance[1].confirmed_xg ?? chance[1].xg], chanceStatuses, "xG", ballConfidence, qualityCoverage, "Provisional xG from shot locations; broadcast sessions count confirmed shots.", 2),
     pair("shots_on_target", "Shots on target", [chance[0].reviewed_on_target ? chance[0].shots_on_target : null, chance[1].reviewed_on_target ? chance[1].shots_on_target : null], chanceStatuses, "shots", ballConfidence, qualityCoverage, "Only displayed after shot outcomes have been reviewed."),
     pair("box_shots", "Box shots", [chance[0].box_shots, chance[1].box_shots], chanceStatuses, "shots", ballConfidence, qualityCoverage, "Detected shots originating inside the penalty area."),
     pair("open_play_xg", "Open-play xG", [chance[0].open_play_shots ? chance[0].open_play_xg : null, chance[1].open_play_shots ? chance[1].open_play_xg : null], chanceStatuses, "xG", ballConfidence, qualityCoverage, "xG from shots classified as open play.", 2),

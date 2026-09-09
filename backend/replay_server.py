@@ -163,7 +163,12 @@ class ReplayRuntime:
 
 
 def create_app(recording: ObservationRecording | None = None, speed: float = 1.0) -> FastAPI:
-    runtime = ReplayRuntime(recording or get_scenario("standard"), speed=speed)
+    recording = recording or get_scenario("standard")
+    if recording.header.match.get("runtime") == "broadcast":
+        from broadcast_replay import BroadcastReplayRuntime
+        runtime = BroadcastReplayRuntime(recording, speed=speed)
+    else:
+        runtime = ReplayRuntime(recording, speed=speed)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

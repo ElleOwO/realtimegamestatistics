@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile.control
+    restart: unless-stopped
+    env_file: ${RTGS_ENV_FILE:?Set the path to the private RTGS environment file}
+    volumes:
+      - control-data:/var/lib/rtgs
+  https:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      RTGS_DOMAIN: ${RTGS_DOMAIN:?Set the dashboard domain}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+volumes:
+  control-data:
+  caddy-data:
+  caddy-config:

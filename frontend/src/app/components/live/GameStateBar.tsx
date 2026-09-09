@@ -18,7 +18,7 @@ export function GameStateBar({
 }) {
   const now = useNow(1000);
   const state = data?.match;
-  const elapsedSincePayload = data && state?.clock_running
+  const elapsedSincePayload = data && state?.clock_running && data.runtime.source_provider !== "canadawest"
     ? Math.max(0, now - data.frame.emitted_at_ms) / 1000 : 0;
   const clockS = state ? state.clock_s + elapsedSincePayload : null;
 

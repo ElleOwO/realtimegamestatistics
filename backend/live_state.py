@@ -13,11 +13,13 @@ VALID_PHASES = {"pregame", "first_half", "halftime", "second_half", "full_time"}
 
 
 class LiveMatchController:
-    def __init__(self) -> None:
+    def __init__(self, *, clock=time.monotonic, persist=True, load_existing=True) -> None:
         data_root = Path(os.environ.get("RTGS_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
         self._path = data_root / "live_match_state.json"
         self._lock = threading.RLock()
-        self._clock_anchor = time.monotonic()
+        self._clock = clock
+        self._persist_enabled = persist
+        self._clock_anchor = self._clock()
         self._state: dict[str, Any] = {
             "team_names": ["USask", "Opponent"],
             "score": [0, 0],
@@ -27,14 +29,15 @@ class LiveMatchController:
             "directions": {"first_half": ["right", "left"], "second_half": ["left", "right"]},
             "tactical_targets": {"team0": {"in_possession": {}, "out_of_possession": {}}, "team1": {"in_possession": {}, "out_of_possession": {}}},
         }
-        self._load()
+        if load_existing:
+            self._load()
 
     @staticmethod
     def _running(phase: str) -> bool:
         return phase in ("first_half", "second_half")
 
     def _materialize_clock(self) -> None:
-        now = time.monotonic()
+        now = self._clock()
         if self._running(self._state["phase"]):
             self._state["clock_s"] += max(0.0, now - self._clock_anchor)
         self._clock_anchor = now
@@ -46,9 +49,11 @@ class LiveMatchController:
                 self._state.update(loaded)
         except (OSError, ValueError):
             pass
-        self._clock_anchor = time.monotonic()
+        self._clock_anchor = self._clock()
 
     def _persist(self) -> None:
+        if not self._persist_enabled:
+            return
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self._path.with_suffix(".tmp")
@@ -133,6 +138,6 @@ class LiveMatchController:
                     return False, "unsupported command", False
             except (KeyError, TypeError, ValueError) as exc:
                 return False, str(exc), False
-            self._clock_anchor = time.monotonic()
+            self._clock_anchor = self._clock()
             self._persist()
             return True, None, reset_metrics

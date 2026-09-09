@@ -8,6 +8,7 @@ on:
       - "backend/**"
       - "frontend/**"
       - "scripts/**"
+      - "deploy/**"
       - "rtgs"
       - ".github/workflows/test.yml"
 
@@ -21,10 +22,12 @@ jobs:
           python-version: "3.11"
       - name: Validate RunPod scripts
         run: |
-          bash -n rtgs scripts/local/*.sh scripts/runpod/*.sh scripts/relay/*.sh deploy/runpod/*.sh
-          python -m py_compile scripts/cloud.py backend/replay_server.py
+          bash -n rtgs scripts/local/*.sh scripts/runpod/*.sh scripts/relay/*.sh deploy/runpod/*.sh deploy/control/*.sh
+          python -m compileall -q scripts backend
       - name: Install API test dependencies
-        run: pip install -r backend/requirements-dev.txt
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install -r backend/requirements-dev.txt
       - name: Test analytics and API workflow
         run: pytest -q backend/tests
 

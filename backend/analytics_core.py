@@ -445,6 +445,7 @@ class PressureEpisode:
 @dataclass
 class AnalyticsEngine:
     coeffs: dict[str, float]
+    event_namespace: str | None = None
     possession: PossessionTracker = field(default_factory=PossessionTracker)
     entries: EntryDetector = field(default_factory=EntryDetector)
     shots: dict[str, ShotDetector] = field(default_factory=lambda: {"team0": ShotDetector(), "team1": ShotDetector()})
@@ -471,11 +472,27 @@ class AnalyticsEngine:
 
     def reset(self) -> None:
         coeffs = self.coeffs
-        self.__dict__.update(AnalyticsEngine(coeffs).__dict__)
+        self.__dict__.update(AnalyticsEngine(coeffs, event_namespace=self.event_namespace).__dict__)
+
+    def discontinuity(self) -> None:
+        """Forget motion/control history without discarding accumulated totals."""
+        self.possession.reset()
+        self.entries.reset()
+        for detector in self.shots.values():
+            detector.reset()
+        self.current_state = "unknown"
+        self.last_controlled_team = None
+        self.last_timestamp_ms = None
+        self.pending_counters.clear()
+        self.active_pressures.clear()
+        self.last_line_sample.clear()
+        self.last_loss_ms.clear()
+        self.line_armed.clear()
 
     def _event(self, kind: str, timestamp_ms: int, team: str | None, point: PitchPoint | None, **details: Any) -> dict[str, Any]:
         event = {
-            "id": str(uuid.uuid4()),
+            "id": (str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.event_namespace}:{kind}:{timestamp_ms}:{team}"))
+                   if self.event_namespace else str(uuid.uuid4())),
             "type": kind,
             "timestamp_ms": timestamp_ms,
             "team": team,
