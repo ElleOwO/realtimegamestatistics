@@ -1238,435 +1238,440 @@ def main(video_path: Optional[str] = None, realtime: bool = False,
           f"{INTERVAL_MINUTES} min of match time\n")
 
     live_misses = 0
-    while True:
-        # Advance `stride` frames (cheaply skipping the in-between ones with
-        # grab()) and process only the most recent one. stride>1 trades
-        # temporal resolution for a near-linear speedup -- ideal for
-        # batch-processing a full half. frame_count tracks true video frames so
-        # the match clock and time-based logic stay accurate.
-        grabbed = False
-        for _ in range(max(1, stride)):
-            if not cap.grab():
-                break
-            frame_count += 1
-            grabbed = True
+    interrupted = False
+    try:
+        while True:
+            # Advance `stride` frames (cheaply skipping the in-between ones with
+            # grab()) and process only the most recent one. stride>1 trades
+            # temporal resolution for a near-linear speedup -- ideal for
+            # batch-processing a full half. frame_count tracks true video frames so
+            # the match clock and time-based logic stay accurate.
+            grabbed = False
+            for _ in range(max(1, stride)):
+                if not cap.grab():
+                    break
+                frame_count += 1
+                grabbed = True
 
-        if not grabbed:
-            # Live streams can stall briefly (buffer underrun); retry a few
-            # times before giving up. Files/VOD end immediately on EOF.
-            if is_live and live_misses < LIVE_MAX_MISSES:
-                live_misses += 1
-                time.sleep(LIVE_RETRY_DELAY)
-                continue
-            break
-        live_misses = 0
-
-        ret, frame = cap.retrieve()
-        if not ret:
-            break
-        processed_idx += 1
-
-        # DETECTION
-        result = PLAYER_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
-        detections = sv.Detections.from_inference(result)
-
-        # Ball
-        ball_detections = detections[detections.class_id == BALL_ID]
-        if len(ball_detections) > MAX_BALLS:
-            ball_detections = ball_detections[:MAX_BALLS]
-        ball_detections.xyxy = sv.pad_boxes(ball_detections.xyxy, px=10)
-
-        # Others (goalkeeper, player, referee). Track FIRST on stable role
-        # class ids, then assign teams -- this lets us cache each player's team
-        # by tracker id instead of re-running the SiGLIP classifier on every
-        # crop every frame.
-        all_detections = detections[detections.class_id != BALL_ID]
-        all_detections = all_detections.with_nms(threshold=0.5, class_agnostic=True)
-        all_detections.class_id = all_detections.class_id.astype(int)
-
-        tracked = tracker.update_with_detections(detections=all_detections)
-
-        goalkeepers_detections = tracked[
-            tracked.class_id == GOALKEEPER_ID][:MAX_GOALKEEPERS]
-        players_detections = tracked[
-            tracked.class_id == PLAYER_ID][:MAX_PLAYERS]
-        referees_detections = tracked[
-            tracked.class_id == REFEREE_ID][:MAX_REFEREES]
-
-
-        # TEAM ASSIGNMENT (cached by tracker id)
-        # Only embed crops for tracks that have not yet locked a team; once a
-        # track reaches TEAM_VOTE_FRAMES votes its team is fixed, so the
-        # expensive SiGLIP call is skipped for it on every subsequent frame.
-        if len(players_detections) > 0:
-            player_tids = players_detections.tracker_id
-            crops_to_class, meta = [], []
-            for i, tid in enumerate(player_tids):
-                if int(tid) in team_by_id:
+            if not grabbed:
+                # Live streams can stall briefly (buffer underrun); retry a few
+                # times before giving up. Files/VOD end immediately on EOF.
+                if is_live and live_misses < LIVE_MAX_MISSES:
+                    live_misses += 1
+                    time.sleep(LIVE_RETRY_DELAY)
                     continue
-                crops_to_class.append(
-                    jersey_crop(frame, players_detections.xyxy[i]))
-                meta.append((i, int(tid)))
+                break
+            live_misses = 0
 
-            if crops_to_class:
-                preds = team_remap[np.asarray(
-                    team_classifier.predict(crops_to_class))]
-                recent_crops.extend(crops_to_class)
-                for (i, tid), pred in zip(meta, preds):
-                    votes = team_votes[tid]
-                    votes[int(pred)] += 1
-                    if sum(votes) >= TEAM_VOTE_FRAMES:
-                        team_by_id[tid] = 0 if votes[0] >= votes[1] else 1
+            ret, frame = cap.retrieve()
+            if not ret:
+                break
+            processed_idx += 1
 
-            team_ids = np.empty(len(player_tids), dtype=int)
-            for i, tid in enumerate(player_tids):
-                tid = int(tid)
-                if tid in team_by_id:
-                    team_ids[i] = team_by_id[tid]
-                else:
-                    v = team_votes[tid]
-                    team_ids[i] = 0 if v[0] >= v[1] else 1   # provisional vote
-            players_detections.class_id = team_ids
+            # DETECTION
+            result = PLAYER_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
+            detections = sv.Detections.from_inference(result)
 
-        goalkeepers_detections.class_id = resolve_goalkeepers_team_id(
-            players_detections, goalkeepers_detections)
+            # Ball
+            ball_detections = detections[detections.class_id == BALL_ID]
+            if len(ball_detections) > MAX_BALLS:
+                ball_detections = ball_detections[:MAX_BALLS]
+            ball_detections.xyxy = sv.pad_boxes(ball_detections.xyxy, px=10)
 
-        # Referees -> palette index 2 (gold).
-        referees_detections.class_id = np.full(
-            len(referees_detections), 2, dtype=int)
+            # Others (goalkeeper, player, referee). Track FIRST on stable role
+            # class ids, then assign teams -- this lets us cache each player's team
+            # by tracker id instead of re-running the SiGLIP classifier on every
+            # crop every frame.
+            all_detections = detections[detections.class_id != BALL_ID]
+            all_detections = all_detections.with_nms(threshold=0.5, class_agnostic=True)
+            all_detections.class_id = all_detections.class_id.astype(int)
 
-        # MERGE for annotation (tracker ids preserved for labels).
-        merged_detections = sv.Detections.merge([
-            players_detections, goalkeepers_detections, referees_detections
-        ])
-        merged_detections.class_id = merged_detections.class_id.astype(int)
+            tracked = tracker.update_with_detections(detections=all_detections)
 
-        labels = [
-            f"#{tracker_id}"
-            for tracker_id in merged_detections.tracker_id
-        ]
+            goalkeepers_detections = tracked[
+                tracked.class_id == GOALKEEPER_ID][:MAX_GOALKEEPERS]
+            players_detections = tracked[
+                tracked.class_id == PLAYER_ID][:MAX_PLAYERS]
+            referees_detections = tracked[
+                tracked.class_id == REFEREE_ID][:MAX_REFEREES]
 
 
-        # ANNOTATE CAMERA FRAME (only needed when displaying windows)
-        if show:
-            annotated_frame = frame.copy()
-            annotated_frame = ellipse_annotator.annotate(
-                scene=annotated_frame, detections=merged_detections)
-            annotated_frame = label_annotator.annotate(
-                scene=annotated_frame, detections=merged_detections, labels=labels)
-            annotated_frame = triangle_annotator.annotate(
-                scene=annotated_frame, detections=ball_detections)
+            # TEAM ASSIGNMENT (cached by tracker id)
+            # Only embed crops for tracks that have not yet locked a team; once a
+            # track reaches TEAM_VOTE_FRAMES votes its team is fixed, so the
+            # expensive SiGLIP call is skipped for it on every subsequent frame.
+            if len(players_detections) > 0:
+                player_tids = players_detections.tracker_id
+                crops_to_class, meta = [], []
+                for i, tid in enumerate(player_tids):
+                    if int(tid) in team_by_id:
+                        continue
+                    crops_to_class.append(
+                        jersey_crop(frame, players_detections.xyxy[i]))
+                    meta.append((i, int(tid)))
+
+                if crops_to_class:
+                    preds = team_remap[np.asarray(
+                        team_classifier.predict(crops_to_class))]
+                    recent_crops.extend(crops_to_class)
+                    for (i, tid), pred in zip(meta, preds):
+                        votes = team_votes[tid]
+                        votes[int(pred)] += 1
+                        if sum(votes) >= TEAM_VOTE_FRAMES:
+                            team_by_id[tid] = 0 if votes[0] >= votes[1] else 1
+
+                team_ids = np.empty(len(player_tids), dtype=int)
+                for i, tid in enumerate(player_tids):
+                    tid = int(tid)
+                    if tid in team_by_id:
+                        team_ids[i] = team_by_id[tid]
+                    else:
+                        v = team_votes[tid]
+                        team_ids[i] = 0 if v[0] >= v[1] else 1   # provisional vote
+                players_detections.class_id = team_ids
+
+            goalkeepers_detections.class_id = resolve_goalkeepers_team_id(
+                players_detections, goalkeepers_detections)
+
+            # Referees -> palette index 2 (gold).
+            referees_detections.class_id = np.full(
+                len(referees_detections), 2, dtype=int)
+
+            # MERGE for annotation (tracker ids preserved for labels).
+            merged_detections = sv.Detections.merge([
+                players_detections, goalkeepers_detections, referees_detections
+            ])
+            merged_detections.class_id = merged_detections.class_id.astype(int)
+
+            labels = [
+                f"#{tracker_id}"
+                for tracker_id in merged_detections.tracker_id
+            ]
 
 
-        # FIELD KEYPOINTS + HOMOGRAPHY
-        # Re-detecting keypoints every frame is expensive and largely redundant
-        # (slow camera pan + already-smoothed homography). Refresh only every
-        # FIELD_DETECT_INTERVAL processed frames and reuse the last good
-        # transform in between.
-        if transformer is None or processed_idx % FIELD_DETECT_INTERVAL == 0:
-            result_field = FIELD_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
-            keypoints = sv.KeyPoints.from_inference(result_field)
-
-            have_keypoints = not (
-                keypoints.xy is None or len(keypoints.xy) == 0
-                or keypoints.confidence is None)
-            if have_keypoints:
-                filter_mask = keypoints.confidence[0] > 0.5
-                frame_reference_points = keypoints.xy[0][filter_mask]
-                pitch_reference_points = np.array(CONFIG.vertices)[filter_mask]
-                if len(frame_reference_points) >= 4:
-                    new_transformer = ViewTransformer(
-                        source=frame_reference_points,
-                        target=pitch_reference_points
-                    )
-                    # Smooth homography across recent detections.
-                    M_buffer.append(new_transformer.m)
-                    new_transformer.m = np.mean(np.array(M_buffer), axis=0)
-                    transformer = new_transformer
-
-        # Until the first successful homography fix we cannot project to pitch.
-        if transformer is None:
+            # ANNOTATE CAMERA FRAME (only needed when displaying windows)
             if show:
-                cv2.imshow("Camera View", annotated_frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-            continue
+                annotated_frame = frame.copy()
+                annotated_frame = ellipse_annotator.annotate(
+                    scene=annotated_frame, detections=merged_detections)
+                annotated_frame = label_annotator.annotate(
+                    scene=annotated_frame, detections=merged_detections, labels=labels)
+                annotated_frame = triangle_annotator.annotate(
+                    scene=annotated_frame, detections=ball_detections)
 
 
-        # PROJECT TO PITCH
-        # Merge players + goalkeepers for pitch projection
-        pitch_detections = sv.Detections.merge([
-            players_detections, goalkeepers_detections
-        ])
+            # FIELD KEYPOINTS + HOMOGRAPHY
+            # Re-detecting keypoints every frame is expensive and largely redundant
+            # (slow camera pan + already-smoothed homography). Refresh only every
+            # FIELD_DETECT_INTERVAL processed frames and reuse the last good
+            # transform in between.
+            if transformer is None or processed_idx % FIELD_DETECT_INTERVAL == 0:
+                result_field = FIELD_DETECTION_MODEL.infer(frame, confidence=0.3)[0]
+                keypoints = sv.KeyPoints.from_inference(result_field)
 
-        if len(pitch_detections) == 0 and len(ball_detections) == 0:
-            if show:
-                cv2.imshow("Camera View", annotated_frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-            continue
+                have_keypoints = not (
+                    keypoints.xy is None or len(keypoints.xy) == 0
+                    or keypoints.confidence is None)
+                if have_keypoints:
+                    filter_mask = keypoints.confidence[0] > 0.5
+                    frame_reference_points = keypoints.xy[0][filter_mask]
+                    pitch_reference_points = np.array(CONFIG.vertices)[filter_mask]
+                    if len(frame_reference_points) >= 4:
+                        new_transformer = ViewTransformer(
+                            source=frame_reference_points,
+                            target=pitch_reference_points
+                        )
+                        # Smooth homography across recent detections.
+                        M_buffer.append(new_transformer.m)
+                        new_transformer.m = np.mean(np.array(M_buffer), axis=0)
+                        transformer = new_transformer
 
-        # Ball
-        frame_ball_xy = ball_detections.get_anchors_coordinates(
-            sv.Position.BOTTOM_CENTER)
-        pitch_ball_xy = transformer.transform_points(
-            points=frame_ball_xy) if len(frame_ball_xy) > 0 else np.array([])
+            # Until the first successful homography fix we cannot project to pitch.
+            if transformer is None:
+                if show:
+                    cv2.imshow("Camera View", annotated_frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+                continue
 
-        # Players + goalkeepers
-        players_xy = pitch_detections.get_anchors_coordinates(
-            sv.Position.BOTTOM_CENTER)
-        pitch_players_xy = transformer.transform_points(
-            points=players_xy) if len(players_xy) > 0 else np.array([])
 
-        # Referees
-        referees_xy = referees_detections.get_anchors_coordinates(
-            sv.Position.BOTTOM_CENTER)
-        pitch_referees_xy = transformer.transform_points(
-            points=referees_xy) if len(referees_xy) > 0 else np.array([])
+            # PROJECT TO PITCH
+            # Merge players + goalkeepers for pitch projection
+            pitch_detections = sv.Detections.merge([
+                players_detections, goalkeepers_detections
+            ])
 
-        # EXPECTED GOALS (xG)
-        if len(pitch_ball_xy) > 0:
-            ball_history.append(pitch_ball_xy[0])
+            if len(pitch_detections) == 0 and len(ball_detections) == 0:
+                if show:
+                    cv2.imshow("Camera View", annotated_frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
+                continue
 
-            is_shot, vx, info = detect_shot(ball_history, CONFIG,
-                                            frame_gap=stride, fps=fps)
-            cooldown_ok = (frame_count - last_shot_frame) >= SHOT_COOLDOWN_FRAMES
-            accepted = is_shot and cooldown_ok
+            # Ball
+            frame_ball_xy = ball_detections.get_anchors_coordinates(
+                sv.Position.BOTTOM_CENTER)
+            pitch_ball_xy = transformer.transform_points(
+                points=frame_ball_xy) if len(frame_ball_xy) > 0 else np.array([])
 
-            # Log every loose candidate (accepted or not) for offline tuning.
-            if info.get("candidate") and len(pitch_detections) > 0:
-                goal_x = CONFIG.length if vx >= 0 else 0.0
-                bx, by = pitch_ball_xy[0]
-                xg = calculate_xg(bx, by, goal_x, CONFIG)
-                team = nearest_team(pitch_ball_xy[0], pitch_detections)
-                all_shots.append({
-                    'clock': format_clock(frame_count / fps),
-                    'frame': frame_count,
-                    'team': team + 1,
-                    'accepted': int(accepted),
-                    'reason': info["reason"],
-                    'xg': round(xg, 3),
-                    'speed_mps': info["speed_mps"],
-                    'dist_m': info["dist_m"],
-                    'aim_deg': info["aim_deg"],
-                    'max_step_m': info["max_step_m"],
-                    'x_m': round(bx / 100.0, 2),
-                    'y_m': round(by / 100.0, 2),
-                })
-                if accepted:
-                    team_xg[team] += xg
-                    shot_markers.append({
+            # Players + goalkeepers
+            players_xy = pitch_detections.get_anchors_coordinates(
+                sv.Position.BOTTOM_CENTER)
+            pitch_players_xy = transformer.transform_points(
+                points=players_xy) if len(players_xy) > 0 else np.array([])
+
+            # Referees
+            referees_xy = referees_detections.get_anchors_coordinates(
+                sv.Position.BOTTOM_CENTER)
+            pitch_referees_xy = transformer.transform_points(
+                points=referees_xy) if len(referees_xy) > 0 else np.array([])
+
+            # EXPECTED GOALS (xG)
+            if len(pitch_ball_xy) > 0:
+                ball_history.append(pitch_ball_xy[0])
+
+                is_shot, vx, info = detect_shot(ball_history, CONFIG,
+                                                frame_gap=stride, fps=fps)
+                cooldown_ok = (frame_count - last_shot_frame) >= SHOT_COOLDOWN_FRAMES
+                accepted = is_shot and cooldown_ok
+
+                # Log every loose candidate (accepted or not) for offline tuning.
+                if info.get("candidate") and len(pitch_detections) > 0:
+                    goal_x = CONFIG.length if vx >= 0 else 0.0
+                    bx, by = pitch_ball_xy[0]
+                    xg = calculate_xg(bx, by, goal_x, CONFIG)
+                    team = nearest_team(pitch_ball_xy[0], pitch_detections)
+                    all_shots.append({
+                        'clock': format_clock(frame_count / fps),
                         'frame': frame_count,
-                        'xg': xg,
-                        'position': pitch_ball_xy[0].copy(),
-                        'team': team,
+                        'team': team + 1,
+                        'accepted': int(accepted),
+                        'reason': info["reason"],
+                        'xg': round(xg, 3),
+                        'speed_mps': info["speed_mps"],
+                        'dist_m': info["dist_m"],
+                        'aim_deg': info["aim_deg"],
+                        'max_step_m': info["max_step_m"],
+                        'x_m': round(bx / 100.0, 2),
+                        'y_m': round(by / 100.0, 2),
                     })
-                    last_shot_frame = frame_count
-                    print(f"SHOT! Team {team + 1} xG: {xg:.2f} "
-                          f"(total {team_xg[team]:.2f})")
+                    if accepted:
+                        team_xg[team] += xg
+                        shot_markers.append({
+                            'frame': frame_count,
+                            'xg': xg,
+                            'position': pitch_ball_xy[0].copy(),
+                            'team': team,
+                        })
+                        last_shot_frame = frame_count
+                        print(f"SHOT! Team {team + 1} xG: {xg:.2f} "
+                              f"(total {team_xg[team]:.2f})")
 
-        # ZONE ENTRIES (final-third key areas, possession-based, debounced)
-        if len(pitch_ball_xy) > 0 and len(pitch_detections) > 0:
-            poss_team = nearest_team(pitch_ball_xy[0], pitch_detections)
-            zone = final_third_zone(pitch_ball_xy[0][0], pitch_ball_xy[0][1],
-                                    team_attacks_right(poss_team, team0_right),
-                                    CONFIG)
+            # ZONE ENTRIES (final-third key areas, possession-based, debounced)
+            if len(pitch_ball_xy) > 0 and len(pitch_detections) > 0:
+                poss_team = nearest_team(pitch_ball_xy[0], pitch_detections)
+                zone = final_third_zone(pitch_ball_xy[0][0], pitch_ball_xy[0][1],
+                                        team_attacks_right(poss_team, team0_right),
+                                        CONFIG)
 
-            # Restart the dwell whenever possession switches or the candidate
-            # zone changes; otherwise extend the current dwell.
-            if poss_team != last_poss_team or zone != pending_zone[poss_team]:
-                pending_zone[poss_team] = zone
-                pending_count[poss_team] = 1
-            else:
-                pending_count[poss_team] += 1
-            last_poss_team = poss_team
+                # Restart the dwell whenever possession switches or the candidate
+                # zone changes; otherwise extend the current dwell.
+                if poss_team != last_poss_team or zone != pending_zone[poss_team]:
+                    pending_zone[poss_team] = zone
+                    pending_count[poss_team] = 1
+                else:
+                    pending_count[poss_team] += 1
+                last_poss_team = poss_team
 
-            # Confirm the entry only after a sustained dwell in a real zone.
-            if (pending_count[poss_team] >= ZONE_CONFIRM_FRAMES
-                    and confirmed_zone[poss_team] != zone):
-                confirmed_zone[poss_team] = zone
-                if zone is not None:
-                    zone_entries[poss_team][zone] += 1
-                    print(f"Team {poss_team + 1} final-third entry -> "
-                          f"{ZONE_LABELS[zone]}")
+                # Confirm the entry only after a sustained dwell in a real zone.
+                if (pending_count[poss_team] >= ZONE_CONFIRM_FRAMES
+                        and confirmed_zone[poss_team] != zone):
+                    confirmed_zone[poss_team] = zone
+                    if zone is not None:
+                        zone_entries[poss_team][zone] += 1
+                        print(f"Team {poss_team + 1} final-third entry -> "
+                              f"{ZONE_LABELS[zone]}")
 
-        # COACH INTERVAL REPORT (every INTERVAL_MINUTES of match time)
-        if frame_count >= next_interval:
-            interval_idx += 1
-            record = print_interval_report(
-                interval_idx, format_clock(frame_count / fps),
-                team_xg, zone_entries, prev_snapshot)
-            interval_history.append(record)
-            next_interval += interval_frames
+            # COACH INTERVAL REPORT (every INTERVAL_MINUTES of match time)
+            if frame_count >= next_interval:
+                interval_idx += 1
+                record = print_interval_report(
+                    interval_idx, format_clock(frame_count / fps),
+                    team_xg, zone_entries, prev_snapshot)
+                interval_history.append(record)
+                next_interval += interval_frames
 
-        # BROADCAST live stats to the coach dashboard (throttled internally)
-        broadcaster.update(build_broadcast_payload(
-            team_xg, zone_entries, format_clock(frame_count / fps),
-            interval_history))
+            # BROADCAST live stats to the coach dashboard (throttled internally)
+            broadcaster.update(build_broadcast_payload(
+                team_xg, zone_entries, format_clock(frame_count / fps),
+                interval_history))
 
 
-        # In headless mode skip all rendering/visualization (the expensive
-        # radar + Voronoi drawing and the GUI windows) -- metrics above are
-        # already computed and broadcast.
-        if not show:
-            continue
+            # In headless mode skip all rendering/visualization (the expensive
+            # radar + Voronoi drawing and the GUI windows) -- metrics above are
+            # already computed and broadcast.
+            if not show:
+                continue
 
-        # DRAW RADAR PITCH
-        pitch_img = draw_pitch(CONFIG)
+            # DRAW RADAR PITCH
+            pitch_img = draw_pitch(CONFIG)
 
-        # Ball
-        if len(pitch_ball_xy) > 0:
-            pitch_img = draw_points_on_pitch(
-                config=CONFIG,
-                xy=pitch_ball_xy,
-                face_color=sv.Color.WHITE,
-                edge_color=sv.Color.BLACK,
-                radius=10,
-                pitch=pitch_img)
-
-        # Team 1
-        if len(pitch_players_xy) > 0 and len(pitch_detections) > 0:
-            team0_mask = pitch_detections.class_id == 0
-            if team0_mask.any():
+            # Ball
+            if len(pitch_ball_xy) > 0:
                 pitch_img = draw_points_on_pitch(
                     config=CONFIG,
-                    xy=pitch_players_xy[team0_mask],
-                    face_color=sv.Color.from_hex('00BFFF'),
+                    xy=pitch_ball_xy,
+                    face_color=sv.Color.WHITE,
+                    edge_color=sv.Color.BLACK,
+                    radius=10,
+                    pitch=pitch_img)
+
+            # Team 1
+            if len(pitch_players_xy) > 0 and len(pitch_detections) > 0:
+                team0_mask = pitch_detections.class_id == 0
+                if team0_mask.any():
+                    pitch_img = draw_points_on_pitch(
+                        config=CONFIG,
+                        xy=pitch_players_xy[team0_mask],
+                        face_color=sv.Color.from_hex('00BFFF'),
+                        edge_color=sv.Color.BLACK,
+                        radius=16,
+                        pitch=pitch_img)
+
+            # Team 2
+            if len(pitch_players_xy) > 0 and len(pitch_detections) > 0:
+                team1_mask = pitch_detections.class_id == 1
+                if team1_mask.any():
+                    pitch_img = draw_points_on_pitch(
+                        config=CONFIG,
+                        xy=pitch_players_xy[team1_mask],
+                        face_color=sv.Color.from_hex('FF1493'),
+                        edge_color=sv.Color.BLACK,
+                        radius=16,
+                        pitch=pitch_img)
+
+            # Referees
+            if len(pitch_referees_xy) > 0:
+                pitch_img = draw_points_on_pitch(
+                    config=CONFIG,
+                    xy=pitch_referees_xy,
+                    face_color=sv.Color.from_hex('FFD700'),
                     edge_color=sv.Color.BLACK,
                     radius=16,
                     pitch=pitch_img)
 
-        # Team 2
-        if len(pitch_players_xy) > 0 and len(pitch_detections) > 0:
-            team1_mask = pitch_detections.class_id == 1
-            if team1_mask.any():
-                pitch_img = draw_points_on_pitch(
-                    config=CONFIG,
-                    xy=pitch_players_xy[team1_mask],
-                    face_color=sv.Color.from_hex('FF1493'),
-                    edge_color=sv.Color.BLACK,
-                    radius=16,
-                    pitch=pitch_img)
-
-        # Referees
-        if len(pitch_referees_xy) > 0:
-            pitch_img = draw_points_on_pitch(
-                config=CONFIG,
-                xy=pitch_referees_xy,
-                face_color=sv.Color.from_hex('FFD700'),
-                edge_color=sv.Color.BLACK,
-                radius=16,
-                pitch=pitch_img)
-
-        # Zone grid + per-zone entry counts
-        pitch_img = draw_zone_overlay(pitch_img, zone_entries, CONFIG,
+            # Zone grid + per-zone entry counts
+            pitch_img = draw_zone_overlay(pitch_img, zone_entries, CONFIG,
                                       team0_right=team0_right)
 
-        # Recent shot markers on the radar (pitch is drawn at scale=0.1,
-        # padding=50 by draw_pitch defaults)
-        for shot in shot_markers:
-            if frame_count - shot['frame'] < XG_DISPLAY_DURATION:
-                px = int(shot['position'][0] * 0.1) + 50
-                py = int(shot['position'][1] * 0.1) + 50
-                cv2.putText(pitch_img, f"xG {shot['xg']:.2f}",
-                            (px + 8, py), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6, (255, 255, 255), 2, cv2.LINE_AA)
-                cv2.circle(pitch_img, (px, py), 8, (0, 0, 255), 2)
+            # Recent shot markers on the radar (pitch is drawn at scale=0.1,
+            # padding=50 by draw_pitch defaults)
+            for shot in shot_markers:
+                if frame_count - shot['frame'] < XG_DISPLAY_DURATION:
+                    px = int(shot['position'][0] * 0.1) + 50
+                    py = int(shot['position'][1] * 0.1) + 50
+                    cv2.putText(pitch_img, f"xG {shot['xg']:.2f}",
+                                (px + 8, py), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.6, (255, 255, 255), 2, cv2.LINE_AA)
+                    cv2.circle(pitch_img, (px, py), 8, (0, 0, 255), 2)
 
-        # Prune old markers
-        shot_markers = [
-            s for s in shot_markers
-            if frame_count - s['frame'] < XG_DISPLAY_DURATION
-        ]
+            # Prune old markers
+            shot_markers = [
+                s for s in shot_markers
+                if frame_count - s['frame'] < XG_DISPLAY_DURATION
+            ]
 
 
-        # VORONOI (smooth blend)
-        if (len(pitch_players_xy) > 0 and len(pitch_detections) > 0):
-            team0_mask = pitch_detections.class_id == 0
-            team1_mask = pitch_detections.class_id == 1
-            if team0_mask.any() and team1_mask.any():
-                voronoi_img = draw_pitch(
-                    config=CONFIG,
-                    background_color=sv.Color.WHITE,
-                    line_color=sv.Color.BLACK
-                )
-                voronoi_img = draw_pitch_voronoi_diagram_2(
-                    config=CONFIG,
-                    team_1_xy=pitch_players_xy[team0_mask],
-                    team_2_xy=pitch_players_xy[team1_mask],
-                    team_1_color=sv.Color.from_hex('00BFFF'),
-                    team_2_color=sv.Color.from_hex('FF1493'),
-                    pitch=voronoi_img)
-                # Ball on voronoi
-                if len(pitch_ball_xy) > 0:
+            # VORONOI (smooth blend)
+            if (len(pitch_players_xy) > 0 and len(pitch_detections) > 0):
+                team0_mask = pitch_detections.class_id == 0
+                team1_mask = pitch_detections.class_id == 1
+                if team0_mask.any() and team1_mask.any():
+                    voronoi_img = draw_pitch(
+                        config=CONFIG,
+                        background_color=sv.Color.WHITE,
+                        line_color=sv.Color.BLACK
+                    )
+                    voronoi_img = draw_pitch_voronoi_diagram_2(
+                        config=CONFIG,
+                        team_1_xy=pitch_players_xy[team0_mask],
+                        team_2_xy=pitch_players_xy[team1_mask],
+                        team_1_color=sv.Color.from_hex('00BFFF'),
+                        team_2_color=sv.Color.from_hex('FF1493'),
+                        pitch=voronoi_img)
+                    # Ball on voronoi
+                    if len(pitch_ball_xy) > 0:
+                        voronoi_img = draw_points_on_pitch(
+                            config=CONFIG,
+                            xy=pitch_ball_xy,
+                            face_color=sv.Color.WHITE,
+                            edge_color=sv.Color.WHITE,
+                            radius=8,
+                            thickness=1,
+                            pitch=voronoi_img)
+                    # Team dots on voronoi
                     voronoi_img = draw_points_on_pitch(
                         config=CONFIG,
-                        xy=pitch_ball_xy,
-                        face_color=sv.Color.WHITE,
+                        xy=pitch_players_xy[team0_mask],
+                        face_color=sv.Color.from_hex('00BFFF'),
                         edge_color=sv.Color.WHITE,
-                        radius=8,
+                        radius=16,
                         thickness=1,
                         pitch=voronoi_img)
-                # Team dots on voronoi
-                voronoi_img = draw_points_on_pitch(
-                    config=CONFIG,
-                    xy=pitch_players_xy[team0_mask],
-                    face_color=sv.Color.from_hex('00BFFF'),
-                    edge_color=sv.Color.WHITE,
-                    radius=16,
-                    thickness=1,
-                    pitch=voronoi_img)
-                voronoi_img = draw_points_on_pitch(
-                    config=CONFIG,
-                    xy=pitch_players_xy[team1_mask],
-                    face_color=sv.Color.from_hex('FF1493'),
-                    edge_color=sv.Color.WHITE,
-                    radius=16,
-                    thickness=1,
-                    pitch=voronoi_img)
+                    voronoi_img = draw_points_on_pitch(
+                        config=CONFIG,
+                        xy=pitch_players_xy[team1_mask],
+                        face_color=sv.Color.from_hex('FF1493'),
+                        edge_color=sv.Color.WHITE,
+                        radius=16,
+                        thickness=1,
+                        pitch=voronoi_img)
 
-                cv2.imshow("Voronoi", voronoi_img)
+                    cv2.imshow("Voronoi", voronoi_img)
 
 
-        # CUMULATIVE xG OVERLAY (camera frame)
-        cv2.putText(annotated_frame, f"Team 1 xG: {team_xg[0]:.2f}",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (255, 191, 0), 2, cv2.LINE_AA)
-        cv2.putText(annotated_frame, f"Team 2 xG: {team_xg[1]:.2f}",
-                    (10, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (147, 20, 255), 2, cv2.LINE_AA)
+            # CUMULATIVE xG OVERLAY (camera frame)
+            cv2.putText(annotated_frame, f"Team 1 xG: {team_xg[0]:.2f}",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (255, 191, 0), 2, cv2.LINE_AA)
+            cv2.putText(annotated_frame, f"Team 2 xG: {team_xg[1]:.2f}",
+                        (10, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (147, 20, 255), 2, cv2.LINE_AA)
 
-        # COACH DASHBOARD (xG + zone entries)
-        dashboard = draw_dashboard(team_xg, zone_entries,
-                                   format_clock(frame_count / fps))
+            # COACH DASHBOARD (xG + zone entries)
+            dashboard = draw_dashboard(team_xg, zone_entries,
+                                       format_clock(frame_count / fps))
 
-        # SHOW WINDOWS
-        cv2.imshow("Camera View", annotated_frame)
-        cv2.imshow("Pitch Radar", pitch_img)
-        cv2.imshow("Coach Dashboard", dashboard)
+            # SHOW WINDOWS
+            cv2.imshow("Camera View", annotated_frame)
+            cv2.imshow("Pitch Radar", pitch_img)
+            cv2.imshow("Coach Dashboard", dashboard)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            break
-        if key == ord("c"):
-            # Re-fit team colours on recently seen players (handles drift /
-            # lighting changes, or a bad initial calibration).
-            if len(recent_crops) >= MIN_CROPS:
-                print(f"\n🔄 Re-calibrating on {len(recent_crops)} recent "
-                      f"crops...")
-                try:
-                    crops_now = list(recent_crops)
-                    team_classifier.fit(crops_now)
-                    # Recompute the stable colour-based mapping (+ swap override).
-                    team_remap, _ = compute_team_remap(team_classifier, crops_now)
-                    if swap_teams:
-                        team_remap = 1 - team_remap
-                    print("✅ Team classifier re-fitted")
-                except Exception as e:  # noqa: BLE001 - keep the match running
-                    print(f"⚠️  Re-calibration failed ({e}); keeping previous fit")
-            else:
-                print(f"⚠️  Need ≥{MIN_CROPS} recent crops to re-calibrate "
-                      f"(have {len(recent_crops)})")
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                break
+            if key == ord("c"):
+                # Re-fit team colours on recently seen players (handles drift /
+                # lighting changes, or a bad initial calibration).
+                if len(recent_crops) >= MIN_CROPS:
+                    print(f"\n🔄 Re-calibrating on {len(recent_crops)} recent "
+                          f"crops...")
+                    try:
+                        crops_now = list(recent_crops)
+                        team_classifier.fit(crops_now)
+                        # Recompute the stable colour-based mapping (+ swap override).
+                        team_remap, _ = compute_team_remap(team_classifier, crops_now)
+                        if swap_teams:
+                            team_remap = 1 - team_remap
+                        print("✅ Team classifier re-fitted")
+                    except Exception as e:  # noqa: BLE001 - keep the match running
+                        print(f"⚠️  Re-calibration failed ({e}); keeping previous fit")
+                else:
+                    print(f"⚠️  Need ≥{MIN_CROPS} recent crops to re-calibrate "
+                          f"(have {len(recent_crops)})")
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n\n⚠️  Run interrupted by user (Ctrl+C)")
 
     cap.release()
     cv2.destroyAllWindows()
@@ -1675,6 +1680,8 @@ def main(video_path: Optional[str] = None, realtime: bool = False,
     # Expected Goals summary
     print("\n=== Expected Goals (xG) ===")
     print(f"  Team 1: {team_xg[0]:.2f}    Team 2: {team_xg[1]:.2f}")
+    if interrupted:
+        print("(Partial results - run was interrupted)")
 
     # Zone-entry summary (final-third key areas, possession-based)
     print("\n=== Final-Third Entries by Key Area (possession-based) ===")
