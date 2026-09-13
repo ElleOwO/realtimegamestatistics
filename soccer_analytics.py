@@ -17,6 +17,7 @@ import math
 import time
 import argparse
 import threading
+import subprocess
 
 # Allow unsupported MPS ops to fall back to CPU instead of erroring
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -843,6 +844,104 @@ def resolve_video_source(source: str) -> str:
     return stream_url
 
 
+class FFmpegSubprocessReader:
+    """
+    Reads video frames from an FFmpeg subprocess for HLS streams with auth tokens.
+    Provides a cv2.VideoCapture-like interface (grab, retrieve, get).
+    """
+    def __init__(self, url: str, width: int = 1920, height: int = 1080):
+        self.url = url
+        self.width = width
+        self.height = height
+        self.frame_bytes = width * height * 3
+        self.process = None
+        self._current_frame = None
+        self._fps = 30.0
+        self._frame_count = 0
+        
+        # FFmpeg command with proper headers for auth tokens
+        self.cmd = [
+            'ffmpeg',
+            '-user_agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
+            '-headers', 'Origin: https://canadawest.tv',
+            '-i', url,
+            '-f', 'image2pipe',
+            '-pix_fmt', 'bgr24',
+            '-vcodec', 'rawvideo',
+            '-an',
+            '-sn',
+            '-'
+        ]
+        
+        self._start()
+        
+    def _start(self):
+        """Start the FFmpeg subprocess."""
+        self.process = subprocess.Popen(
+            self.cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=self.frame_bytes
+        )
+        
+        # Read first frame to verify stream
+        raw = self.process.stdout.read(self.frame_bytes)
+        if len(raw) == 0:
+            raise RuntimeError("Failed to read first frame from FFmpeg")
+        self._current_frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
+        
+    def grab(self) -> bool:
+        """Read next frame from FFmpeg."""
+        try:
+            raw = self.process.stdout.read(self.frame_bytes)
+            if len(raw) == 0:
+                return False
+            self._current_frame = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 3))
+            self._frame_count += 1
+            return True
+        except Exception:
+            return False
+            
+    def retrieve(self) -> tuple[bool, np.ndarray]:
+        """Return the current frame."""
+        if self._current_frame is None:
+            return False, np.array([])
+        return True, self._current_frame.copy()
+        
+    def read(self) -> tuple[bool, np.ndarray]:
+        """Combined grab and retrieve."""
+        if self.grab():
+            return self.retrieve()
+        return False, np.array([])
+        
+    def get(self, prop_id: int) -> float:
+        """Get video properties (limited implementation)."""
+        if prop_id == cv2.CAP_PROP_FRAME_WIDTH:
+            return float(self.width)
+        if prop_id == cv2.CAP_PROP_FRAME_HEIGHT:
+            return float(self.height)
+        if prop_id == cv2.CAP_PROP_FPS:
+            return self._fps
+        if prop_id == cv2.CAP_PROP_POS_FRAMES:
+            return float(self._frame_count)
+        return 0.0
+        
+    def set(self, prop_id: int, value: float) -> bool:
+        """Set video properties (no-op for streams)."""
+        return False
+        
+    def isOpened(self) -> bool:
+        """Check if stream is open."""
+        return self.process is not None and self.process.poll() is None
+        
+    def release(self):
+        """Clean up subprocess."""
+        if self.process:
+            self.process.terminate()
+            self.process.wait()
+            self.process = None
+
+
 def select_camera() -> int:
     """Scan available cameras and let the user pick one."""
     available = []
@@ -1036,9 +1135,12 @@ def main(video_path: Optional[str] = None, realtime: bool = False,
             print(f"❌ {e}")
             return
         print(f"🎞️  Using video source: {video_path}")
-        # Force the FFmpeg backend for network sources for reliable HLS/RTSP.
-        cap = (cv2.VideoCapture(resolved, cv2.CAP_FFMPEG)
-               if is_url else cv2.VideoCapture(resolved))
+        # For HLS streams with auth tokens, use FFmpeg subprocess reader
+        if resolved.endswith('.m3u8'):
+            print("📡 Using FFmpeg subprocess for HLS stream with auth tokens")
+            cap = FFmpegSubprocessReader(resolved)
+        else:
+            cap = cv2.VideoCapture(resolved, cv2.CAP_FFMPEG)
         label = video_path if is_url else os.path.basename(video_path)
         source_desc = f"live stream '{label}'" if is_live else f"video '{label}'"
     else:
